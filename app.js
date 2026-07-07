@@ -1,39 +1,11 @@
-// Contraseña del administrador
 const ADMIN_PASSWORD = "1234";
-
-// Estructura limpia inicial
-const MENU_INICIAL = {
-    "Camarones": [
-        { id: "1719870000001", nombre: "Camarones Empanizados", precio: 220 },
-        { id: "1719870000002", nombre: "Aguachile Rojo", precio: 240 },
-        { id: "1719870000003", nombre: "Aguachile Verde", precio: 240 }
-    ],
-    "Filetes": [
-        { id: "1719870000004", nombre: "Filete a la Plancha", precio: 210 },
-        { id: "1719870000005", nombre: "Filete Empanizado", precio: 220 }
-    ],
-    "Burritos": [
-        { id: "1719870000006", nombre: "Burrito de Camarón", precio: 180 }
-    ],
-    "Bebidas": [
-        { id: "1719870000007", nombre: "Agua Fresca", precio: 35 },
-        { id: "1719870000008", nombre: "Refresco", precio: 30 }
-    ]
-};
-
-const CLAVE_MESAS = "pos-mariscos-matty-mesas";
-const CLAVE_VIRTUALES = "pos-mariscos-matty-virtuales";
-const CLAVE_MENU = "pos-mariscos-matty-menu";
-const CLAVE_VENTAS = "pos-mariscos-matty-ventas";
-const CLAVE_COMANDAS = "pos-mariscos-matty-comandas";
-const CLAVE_GASTOS = "pos-mariscos-matty-gastos"; // NUEVO
 
 let MENU = {};
 let estadoMesas = [];
 let pedidosVirtuales = []; 
 let comandasCocina = [];   
 let historialVentas = [];
-let listaGastos = []; // NUEVO
+let listaGastos = []; 
 
 let mesaActivaIndex = null;
 let esMesaVirtualActiva = false; 
@@ -45,47 +17,88 @@ let adminCategoriaActiva = "";
 let porcentajePropina = 10;
 let busquedaFiltro = "";
 
-// Cargar todo desde LocalStorage
-function cargarTodo() {
-    const menuGuardado = localStorage.getItem(CLAVE_MENU);
-    if (menuGuardado) MENU = JSON.parse(menuGuardado);
-    else { MENU = MENU_INICIAL; guardarMenu(); }
-    categoriaActiva = Object.keys(MENU)[0] || "";
-    adminCategoriaActiva = Object.keys(MENU)[0] || "";
+// --- MOTOR DE SINCRONIZACIÓN CON EL SERVIDOR NUBE ---
 
-    const mesasGuardadas = localStorage.getItem(CLAVE_MESAS);
-    if (mesasGuardadas) estadoMesas = JSON.parse(mesasGuardadas);
-    else {
-        estadoMesas = [];
-        for (let i = 1; i <= 10; i++) estadoMesas.push({ numero: i, estado: "libre", items: [] });
-        guardarMesas();
+// Cargar datos desde el servidor centralizado
+async function cargarTodo() {
+    try {
+        const respuesta = await fetch('/api/estado');
+        const datos = await respuesta.json();
+        
+        estadoMesas = datos.mesas;
+        pedidosVirtuales = datos.virtuales;
+        comandasCocina = datos.comandas;
+        historialVentas = datos.ventas;
+        listaGastos = datos.gastos;
+        MENU = datos.menu;
+
+        if (!categoriaActiva && Object.keys(MENU).length > 0) {
+            categoriaActiva = Object.keys(MENU)[0];
+            adminCategoriaActiva = Object.keys(MENU)[0];
+        }
+
+        // Refrescar la pantalla en la que se encuentre el usuario actualmente
+        redibujarPantallaActual();
+    } catch (error) {
+        console.error("Error al sincronizar con la central:", error);
     }
-
-    const virtualesGuardados = localStorage.getItem(CLAVE_VIRTUALES);
-    pedidosVirtuales = virtualesGuardados ? JSON.parse(virtualesGuardados) : [];
-
-    const comandasGuardadas = localStorage.getItem(CLAVE_COMANDAS);
-    comandasCocina = comandasGuardadas ? JSON.parse(comandasGuardadas) : [];
-
-    const ventasGuardadas = localStorage.getItem(CLAVE_VENTAS);
-    historialVentas = ventasGuardadas ? JSON.parse(ventasGuardadas) : [];
-
-    // NUEVO: Inicializar carga de gastos
-    const gastosGuardados = localStorage.getItem(CLAVE_GASTOS);
-    listaGastos = gastosGuardados ? JSON.parse(gastosGuardados) : [];
 }
 
-function guardarMesas() { localStorage.setItem(CLAVE_MESAS, JSON.stringify(estadoMesas)); }
-function guardarVirtuales() { localStorage.setItem(CLAVE_VIRTUALES, JSON.stringify(pedidosVirtuales)); }
-function guardarMenu() { localStorage.setItem(CLAVE_MENU, JSON.stringify(MENU)); }
-function guardarVentas() { localStorage.setItem(CLAVE_VENTAS, JSON.stringify(historialVentas)); }
-function guardarComandas() { localStorage.setItem(CLAVE_COMANDAS, JSON.stringify(comandasCocina)); }
-function guardarGastos() { localStorage.setItem(CLAVE_GASTOS, JSON.stringify(listaGastos)); } // NUEVO
+// Enviar cambios al servidor de forma inmediata al hacer una acción
+async function guardarCambiosEnServidor() {
+    try {
+        await fetch('/api/estado', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                mesas: estadoMesas,
+                virtuales: pedidosVirtuales,
+                comandas: comandasCocina,
+                ventas: historialVentas,
+                gastos: listaGastos,
+                menu: MENU
+            })
+        });
+    } catch (error) {
+        console.error("Error al subir cambios a la central:", error);
+    }
+}
+
+// Controla qué se debe actualizar visualmente sin romper la escritura del usuario
+function redibujarPantallaActual() {
+    actualizarBadgeCocina();
+    
+    // Si la vista de detalle de una mesa está abierta, solo actualiza la lista de la orden lateral
+    if (document.getElementById("vista-mesa").style.display === "block") {
+        renderOrden();
+        return;
+    }
+    
+    // Si está en el panel de administración, refresca reportes
+    if (document.getElementById("vista-admin").style.display === "block") {
+        document.getElementById("admin-total-mesas").textContent = estadoMesas.length;
+        renderGastosEnAdmin();
+        calcularReporteVentas();
+        return;
+    }
+
+    // Si está en las pestañas generales, refresca los mapas
+    if (document.getElementById("seccion-mesas").style.display === "block") renderMapa();
+    if (document.getElementById("seccion-virtuales").style.display === "block") renderPedidosVirtuales();
+    if (document.getElementById("seccion-cocina").style.display === "block") renderPantallaCocina();
+}
+
+function guardarMesas() { guardarCambiosEnServidor(); }
+function guardarVirtuales() { guardarCambiosEnServidor(); }
+function guardarMenu() { guardarCambiosEnServidor(); }
+function guardarVentas() { guardarCambiosEnServidor(); }
+function guardarComandas() { guardarCambiosEnServidor(); }
+function guardarGastos() { guardarCambiosEnServidor(); }
 
 // Formateadores y Ayudantes
 function formatoMoneda(valor) { return "$" + Math.round(valor).toLocaleString("es-MX"); }
 function obtenerMesaUOrdenActual() { return esMesaVirtualActiva ? pedidosVirtuales[mesaActivaIndex] : estadoMesas[mesaActivaIndex]; }
-function guardarMesaUOrdenActual() { if (esMesaVirtualActiva) guardarVirtuales(); else guardarMesas(); }
+function guardarMesaUOrdenActual() { guardarCambiosEnServidor(); }
 function calcularSubtotalMesa(mesa) { 
     if(!mesa || !mesa.items) return 0;
     return mesa.items.reduce((acc, it) => acc + it.precio * it.cantidad, 0); 
@@ -100,7 +113,6 @@ function actualizarReloj() {
         " · " + ahora.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
     
     if(document.getElementById("seccion-cocina").style.display === "block") renderPantallaCocina();
-    actualizarBadgeCocina();
 }
 
 function actualizarBadgeCocina() {
@@ -326,8 +338,9 @@ async function cancelarMesa() {
     if (orden.items.length > 0) {
         if (!await mostrarUIModal("¿Cancelar Todo?", "¿Deseas limpiar por completo este pedido?")) return;
     }
-    if (esMesaVirtualActiva) { pedidosVirtuales = pedidosVirtuales.filter((_, idx) => idx !== mesaActivaIndex); guardarVirtuales(); }
-    else { orden.items = []; orden.estado = "libre"; guardarMesas(); }
+    if (esMesaVirtualActiva) { pedidosVirtuales = pedidosVirtuales.filter((_, idx) => idx !== mesaActivaIndex); }
+    else { orden.items = []; orden.estado = "libre"; }
+    guardarCambiosEnServidor();
     regresarAOrigen();
 }
 
@@ -340,7 +353,7 @@ document.getElementById("btn-enviar-cocina").addEventListener("click", async () 
         id: Date.now().toString(), origen: origenNombre, horaEntrada: new Date().toISOString(),
         items: orden.items.map(it => ({ nombre: it.nombre, cantidad: it.cantidad, nota: it.nota }))
     });
-    guardarComandas(); actualizarBadgeCocina(); mostrarUIModal("Éxito", "Comanda enviada a la cocina.");
+    guardarComandas(); mostrarUIModal("Éxito", "Comanda enviada a la cocina.");
 });
 
 function renderPantallaCocina() {
@@ -352,7 +365,7 @@ function renderPantallaCocina() {
         const card = document.createElement("div"); card.className = "comanda-card " + (minutos >= 15 ? "critica" : "lista");
         let listaItemsHtml = com.items.map(it => `<div class="comanda-item-row"><span class="comanda-item-nombre">${it.cantidad}x ${it.nombre}</span>${it.nota ? `<div class="comanda-item-nota">⚠️ ${it.nota}</div>` : ""}</div>`).join("");
         card.innerHTML = `<div class="comanda-header"><span class="comanda-origen">${com.origen}</span><span class="comanda-tiempo">${minutos} min</span></div><div class="comanda-cuerpo">${listaItemsHtml}</div><div class="comanda-footer"><button class="btn btn-gold btn-completar-chef"><i class="fa-solid fa-check"></i> Despachar</button></div>`;
-        card.querySelector(".btn-completar-chef").addEventListener("click", () => { comandasCocina = comandasCocina.filter((_, i) => i !== idx); guardarComandas(); renderPantallaCocina(); actualizarBadgeCocina(); });
+        card.querySelector(".btn-completar-chef").addEventListener("click", () => { comandasCocina = comandasCocina.filter((_, i) => i !== idx); guardarComandas(); renderPantallaCocina(); });
         grid.appendChild(card);
     });
 }
@@ -367,7 +380,7 @@ document.getElementById("cerrar-dividir").addEventListener("click", () => {
     const orden = obtenerMesaUOrdenActual();
     cuentaSeparadaActiva.forEach(itemSep => {
         const original = orden.items.find(i => i.id === itemSep.id);
-        if(original) original.cantidad += itemSep.cantidad; else orden.items.push(itemSep);
+        if(original) original.sandwich += itemSep.cantidad; else orden.items.push(itemSep);
     });
     cuentaSeparadaActiva = []; guardarMesaUOrdenActual(); document.getElementById("overlay-dividir").style.display = "none"; renderMesa();
 });
@@ -377,9 +390,9 @@ function renderModalDivision() {
     const contCliente = document.getElementById("division-lista-cliente");
     contMesa.innerHTML = ""; contCliente.innerHTML = ""; let totalSeparado = 0;
     orden.items.forEach(it => {
-        if(it.strong > 0 || it.cantidad > 0) {
+        if(it.cantidad > 0) {
             const row = document.createElement("div"); row.className = "item-division-row";
-            row.innerHTML = `<span>${it.cantidad}x ${it.nombre}</span> <button>Separar 1</button>`;
+            row.innerHTML = `<span>${it.sandwich || it.cantidad}x ${it.nombre}</span> <button>Separar 1</button>`;
             row.querySelector("button").addEventListener("click", () => {
                 it.cantidad -= 1; const enSep = cuentaSeparadaActiva.find(i => i.id === it.id);
                 if(enSep) enSep.cantidad += 1; else cuentaSeparadaActiva.push({ ...it, cantidad: 1 });
@@ -409,7 +422,7 @@ function abrirTicketPreconfigurado(esParcial) {
     esCobroParcialDeDivision = esParcial; const orden = obtenerMesaUOrdenActual();
     const productosACobrar = esParcial ? cuentaSeparadaActiva : orden.items;
     if (productosACobrar.length === 0) return;
-    if(!esParcial) { orden.estado = "cuenta"; guardarMesaUOrdenActual(); renderMapa(); renderPedidosVirtuales(); }
+    if(!esParcial) { orden.estado = "cuenta"; guardarMesaUOrdenActual(); }
     let tituloCabecera = esMesaVirtualActiva ? `${orden.tipo}` : `Mesa ${orden.numero}`;
     if(esParcial) tituloCabecera += " (Pago Parcial)";
     document.getElementById("ticket-mesa-info").textContent = `${tituloCabecera} · ${new Date().toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })}`;
@@ -449,11 +462,14 @@ function confirmarCobro() {
         if (pago < (subtotal + propina)) { mostrarUIModal("Error", "Efectivo recibido insuficiente."); return; }
     }
     historialVentas.push({ fecha: new Date().toISOString(), mesa: orden ? (esMesaVirtualActiva ? orden.tipo : orden.numero) : "Varios", subtotal: subtotal, propina: propina, metodo: metodo, items: [...productosACobrar] });
-    guardarVentas();
+    
     if(esCobroParcialDeDivision) {
         cuentaSeparadaActiva = []; if(orden.items.length === 0 && !esMesaVirtualActiva) orden.estado = "libre"; else if (orden.items.length > 0) orden.estado = "ocupada"; 
     } else { if(esMesaVirtualActiva) pedidosVirtuales = pedidosVirtuales.filter((_, idx) => idx !== mesaActivaIndex); else { orden.items = []; orden.estado = "libre"; } }
-    guardarMesas(); guardarVirtuales(); document.getElementById("overlay-ticket").style.display = "none"; regresarAOrigen();
+    
+    guardarCambiosEnServidor();
+    document.getElementById("overlay-ticket").style.display = "none"; 
+    regresarAOrigen();
 }
 function actualizarBotonesPropina() {
     document.querySelectorAll(".btn-propina").forEach(btn => {
@@ -504,7 +520,6 @@ function renderAdmin() {
     calcularReporteVentas();
 }
 
-// NUEVO: Renderizar Lista de Gastos en el Admin
 function renderGastosEnAdmin() {
     const listaCont = document.getElementById("admin-lista-gastos");
     if(!listaCont) return; listaCont.innerHTML = "";
@@ -520,7 +535,6 @@ function renderGastosEnAdmin() {
     });
 }
 
-// NUEVO: Captura de Formulario de Gastos
 document.getElementById("form-nuevo-gasto").addEventListener("submit", (e) => {
     e.preventDefault();
     const concepto = document.getElementById("gasto-concepto").value.trim();
@@ -538,7 +552,7 @@ function calcularReporteVentas() {
         if(v.metodo === "Transferencia") trans += v.subtotal;
     });
     const totalGastos = listaGastos.reduce((acc, g) => acc + g.monto, 0);
-    const balanceNetoFinal = (efec + tarj + trans) - totalGastos; // CORRECCIÓN: Descuento directo aplicado
+    const balanceNetoFinal = (efec + tarj + trans) - totalGastos;
 
     document.getElementById("rep-efectivo").textContent = formatoMoneda(efec);
     document.getElementById("rep-tarjeta").textContent = formatoMoneda(tarj);
@@ -548,7 +562,6 @@ function calcularReporteVentas() {
     document.getElementById("rep-total-propinas").textContent = formatoMoneda(propinas);
 }
 
-// NUEVO: Generador e Impresor de Ticket de Corte de Caja
 function imprimirCorteCaja() {
     let efec = 0, tarj = 0, trans = 0, propinas = 0;
     historialVentas.forEach(v => {
@@ -571,6 +584,7 @@ function imprimirCorteCaja() {
         <div class="ticket-calculos" style="background:transparent; padding:0;">
             <div class="ticket-subtotal-linea"><span>💵 Ventas Efectivo:</span> <span>${formatoMoneda(efec)}</span></div>
             <div class="ticket-subtotal-linea"><span>💳 Ventas Tarjeta:</span> <span>${formatoMoneda(tarj)}</span></div>
+            <div class="ticket-subtotal-linea"><span>📱 Ventas Transf:</span> <span>${formatoMoneda(trans)}</span></div>
             <hr style="border:1px dashed #000; margin:6px 0;">
             <div class="ticket-subtotal-linea" style="font-size:14px; color:#000;"><span>💰 Total Ventas Brutas:</span> <span>${formatoMoneda(totalBruto)}</span></div>
             <div class="ticket-subtotal-linea" style="color:var(--teal);"><span>❤️ Total Propinas Recibidas:</span> <span>${formatoMoneda(propinas)}</span></div>
@@ -599,10 +613,10 @@ function imprimirCorteCaja() {
     window.print();
 }
 
-function cargarPlatilloEnFormulario(platillo, categoria) {
+function cargarPlatilloEnFormulario(platillo, category) {
     document.getElementById("form-admin-titulo").textContent = "Modificar Platillo";
     document.getElementById("admin-platillo-id").value = platillo.id;
-    document.getElementById("admin-platillo-cat").value = categoria;
+    document.getElementById("admin-platillo-cat").value = category;
     document.getElementById("admin-platillo-nombre").value = platillo.nombre;
     document.getElementById("admin-platillo-precio").value = platillo.precio;
     document.getElementById("btn-cancelar-edicion").style.display = "inline-flex";
@@ -611,16 +625,19 @@ function limpiarFormularioAdmin() {
     document.getElementById("form-nuevo-platillo").reset(); document.getElementById("admin-platillo-id").value = "";
     document.getElementById("form-admin-titulo").textContent = "Añadir Platillo"; document.getElementById("btn-cancelar-edicion").style.display = "none";
 }
-async function ejecutarEliminarPlatillo(categoria, id) {
-    const platillo = MENU[categoria].find(p => p.id === id); if (!platillo) return;
-    if(await mostrarUIModal("Eliminar?", `¿Eliminar "${platillo.nombre}"?`)) { MENU[categoria] = MENU[categoria].filter(p => p.id !== id); guardarMenu(); renderAdmin(); }
+async function ejecutarEliminarPlatillo(category, id) {
+    const platillo = MENU[category].find(p => p.id === id); if (!platillo) return;
+    if(await mostrarUIModal("Eliminar?", `¿Eliminar "${platillo.nombre}"?`)) { 
+        MENU[category] = MENU[category].filter(p => p.id !== id); 
+        guardarMenu(); 
+    }
 }
 
-document.getElementById("btn-agregar-mesa").addEventListener("click", () => { estadoMesas.push({ numero: estadoMesas.length + 1, estado: "libre", items: [] }); guardarMesas(); renderAdmin(); });
+document.getElementById("btn-agregar-mesa").addEventListener("click", () => { estadoMesas.push({ numero: estadoMesas.length + 1, estado: "libre", items: [] }); guardarMesas(); });
 document.getElementById("btn-eliminar-mesa").addEventListener("click", async () => {
     if(estadoMesas.length === 0) return; const ultima = estadoMesas[estadoMesas.length - 1];
     if(ultima.estado !== "libre") return mostrarUIModal("Error", "La mesa está ocupada.");
-    if(await mostrarUIModal("Remover?", `¿Remover Mesa ${ultima.numero}?`)) { estadoMesas.pop(); guardarMesas(); renderAdmin(); }
+    if(await mostrarUIModal("Remover?", `¿Remover Mesa ${ultima.numero}?`)) { estadoMesas.pop(); guardarMesas(); }
 });
 
 document.getElementById("form-nuevo-platillo").addEventListener("submit", (e) => {
@@ -629,12 +646,12 @@ document.getElementById("form-nuevo-platillo").addEventListener("submit", (e) =>
     const precio = parseFloat(document.getElementById("admin-platillo-precio").value);
     if (idExistente) { Object.keys(MENU).forEach(c => { MENU[c] = MENU[c].filter(p => p.id !== idExistente); }); MENU[cat].push({ id: idExistente, nombre: nombre, precio: precio }); }
     else { MENU[cat].push({ id: Date.now().toString(), nombre: nombre, precio: precio }); }
-    guardarMenu(); limpiarFormularioAdmin(); adminCategoriaActiva = cat; renderAdmin();
+    guardarMenu(); limpiarFormularioAdmin(); adminCategoriaActiva = cat;
 });
 document.getElementById("btn-cancelar-edicion").addEventListener("click", limpiarFormularioAdmin);
 document.getElementById("btn-borrar-ventas").addEventListener("click", async () => {
     if(await mostrarUIModal("Reset?", "¡Cuidado! ¿Borrar de forma permanente todas las ventas e historial de gastos registrados hoy?")) {
-        historialVentas = []; listaGastos = []; guardarVentas(); guardarGastos(); renderAdmin();
+        historialVentas = []; listaGastos = []; guardarVentas(); guardarGastos();
     }
 });
 
@@ -642,11 +659,11 @@ document.getElementById("btn-borrar-ventas").addEventListener("click", async () 
 document.getElementById("btn-cancelar-mesa").addEventListener("click", cancelarMesa);
 document.getElementById("btn-cobrar").addEventListener("click", abrirTicket);
 document.getElementById("cerrar-ticket").addEventListener("click", () => document.getElementById("overlay-ticket").style.display = "none");
-document.getElementById("btn-confirmar-cobro").addEventListener("click", confirmarCobro);
+document.getElementById("btn-confirmar-cobro").addEventListener("click", () => { confirmarCobro(); });
 document.getElementById("btn-imprimir").addEventListener("click", () => window.print());
 document.getElementById("btn-admin-panel").addEventListener("click", abrirAdminConPassword);
 document.getElementById("btn-volver-admin").addEventListener("click", cerrarAdmin);
-document.getElementById("btn-imprimir-corte").addEventListener("click", imprimirCorteCaja); // NUEVO
+document.getElementById("btn-imprimir-corte").addEventListener("click", imprimirCorteCaja); 
 
 document.getElementById("buscar-platillo").addEventListener("input", (e) => { busquedaFiltro = e.target.value; renderPlatillos(); });
 document.querySelectorAll(".btn-propina").forEach(btn => {
@@ -665,5 +682,10 @@ document.querySelectorAll(".btn-tecla").forEach(t => {
     });
 });
 
-// Inicialización de arranque
-(function iniciar() { cargarTodo(); renderMapa(); actualizarReloj(); setInterval(actualizarReloj, 30000); })();
+// Inicialización de arranque y bucle continuo cada 3 segundos
+(function iniciar() { 
+    cargarTodo(); 
+    actualizarReloj(); 
+    setInterval(actualizarReloj, 30000); 
+    setInterval(cargarTodo, 3000); // REFRESCADOR AUTOMÁTICO EN TIEMPO REAL
+})();
