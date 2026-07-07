@@ -9,6 +9,20 @@
 </head>
 <body>
 
+    <div class="overlay overlay-login" id="overlay-login" style="display:flex; z-index:5000; background:linear-gradient(135deg, var(--navy) 0%, var(--navy-deep) 100%);">
+        <div class="ui-modal" style="width:340px;">
+            <h3><i class="fa-solid fa-lock"></i> Acceso Restringido</h3>
+            <p>Mariscos Matty · Sistema POS<br>Ingresa la contraseña para continuar.</p>
+            <div class="form-group" style="text-align:left; margin-top:18px;">
+                <input type="password" id="login-password-input" class="ticket-pago input" placeholder="Contraseña de acceso" autocomplete="off">
+            </div>
+            <p id="login-error-msg" style="display:none; color:var(--coral); font-weight:700; margin-top:8px;">Contraseña incorrecta. Intenta de nuevo.</p>
+            <div class="ui-modal-botones">
+                <button class="btn btn-gold" id="btn-login-entrar" style="width:100%;"><i class="fa-solid fa-right-to-bracket"></i> Entrar</button>
+            </div>
+        </div>
+    </div>
+
     <div class="top-bar">
         <div class="marca">
             <h1>Mariscos <span>Matty</span></h1>

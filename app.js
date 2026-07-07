@@ -1,4 +1,5 @@
-const ADMIN_PASSWORD = "1234";
+const ADMIN_PASSWORD = "1234";      // Contraseña para acciones de Administrador (editar cantidades enviadas, cerrar cuentas, panel admin)
+const ACCESS_PASSWORD = "12345"; // Contraseña general para poder entrar al sistema
 
 let MENU = {};
 let estadoMesas = [];
@@ -16,6 +17,19 @@ let categoriaActiva = "";
 let adminCategoriaActiva = "";
 let porcentajePropina = 10;
 let busquedaFiltro = "";
+let ticketFueImpreso = false; // Control: no se puede finalizar/cerrar una cuenta sin haber impreso el ticket
+
+// Pide la contraseña de Administrador para autorizar una acción sensible.
+// Devuelve true si la contraseña es correcta, false si se cancela o es incorrecta.
+async function solicitarPasswordAdmin(mensaje = "Esta acción requiere autorización del Administrador:") {
+    const pw = await mostrarUIModal("Autorización Requerida", mensaje, true);
+    if (pw === false) return false; // el usuario canceló
+    if (pw !== ADMIN_PASSWORD) {
+        await mostrarUIModal("Acceso Denegado", "Contraseña de administrador incorrecta.");
+        return false;
+    }
+    return true;
+}
 
 // --- MOTOR DE SINCRONIZACIÓN CON EL SERVIDOR NUBE ---
 
@@ -25,12 +39,12 @@ async function cargarTodo() {
         const respuesta = await fetch('/api/estado');
         const datos = await respuesta.json();
         
-        estadoMesas = datos.mesas;
-        pedidosVirtuales = datos.virtuales;
-        comandasCocina = datos.comandas;
-        historialVentas = datos.ventas;
-        listaGastos = datos.gastos;
-        MENU = datos.menu;
+        estadoMesas = datos.mesas || [];
+        pedidosVirtuales = datos.virtuales || [];
+        comandasCocina = datos.comandas || [];
+        historialVentas = datos.ventas || [];
+        listaGastos = datos.gastos || [];
+        MENU = datos.menu || {};
 
         if (!categoriaActiva && Object.keys(MENU).length > 0) {
             categoriaActiva = Object.keys(MENU)[0];
@@ -284,15 +298,20 @@ function agregarItem(platillo) {
     const orden = obtenerMesaUOrdenActual();
     const existente = orden.items.find((it) => it.id === platillo.id);
     if (existente) existente.cantidad += 1;
-    else orden.items.push({ id: platillo.id, nombre: platillo.nombre, precio: platillo.precio, cantidad: 1, nota: "" });
+    else orden.items.push({ id: platillo.id, nombre: platillo.nombre, precio: platillo.precio, cantidad: 1, nota: "", enviado: false });
     if (orden.estado === "libre") orden.estado = "ocupada";
     guardarMesaUOrdenActual(); renderMesa();
 }
 
-function cambiarCantidad(itemId, delta) {
+async function cambiarCantidad(itemId, delta) {
     const orden = obtenerMesaUOrdenActual();
     const item = orden.items.find((it) => it.id === itemId);
     if (!item) return;
+    // Si el platillo ya fue enviado a cocina, se requiere autorización de Administrador para modificar su cantidad
+    if (item.enviado) {
+        const autorizado = await solicitarPasswordAdmin(`"${item.nombre}" ya fue enviado a cocina. Ingresa la contraseña de Administrador para modificar la cantidad:`);
+        if (!autorizado) return;
+    }
     item.cantidad += delta;
     if (item.cantidad <= 0) orden.items = orden.items.filter((it) => it.id !== itemId);
     if (orden.items.length === 0 && !esMesaVirtualActiva) orden.estado = "libre";
@@ -315,7 +334,7 @@ function renderOrden() {
             const fila = document.createElement("div"); fila.className = "orden-item";
             fila.innerHTML = `
                 <div style="flex:1;">
-                    <div class="nombre">${it.nombre}</div>
+                    <div class="nombre">${it.nombre} ${it.enviado ? '<i class="fa-solid fa-lock" title="Enviado a cocina · requiere Administrador para modificar" style="color:var(--coral); font-size:11px;"></i>' : ''}</div>
                     <div class="subtotal">${formatoMoneda(it.precio * it.cantidad)}</div>
                     <div class="nota-cocina-box"><input type="text" class="input-nota" placeholder="✍️ Nota de cocina..." value="${it.nota || ''}"></div>
                 </div>
@@ -337,6 +356,11 @@ async function cancelarMesa() {
     const orden = obtenerMesaUOrdenActual();
     if (orden.items.length > 0) {
         if (!await mostrarUIModal("¿Cancelar Todo?", "¿Deseas limpiar por completo este pedido?")) return;
+        const tieneItemsEnviados = orden.items.some(it => it.enviado);
+        if (tieneItemsEnviados) {
+            const autorizado = await solicitarPasswordAdmin("Este pedido ya tiene platillos enviados a cocina. Ingresa la contraseña de Administrador para cancelarlo:");
+            if (!autorizado) return;
+        }
     }
     if (esMesaVirtualActiva) { pedidosVirtuales = pedidosVirtuales.filter((_, idx) => idx !== mesaActivaIndex); }
     else { orden.items = []; orden.estado = "libre"; }
@@ -353,7 +377,10 @@ document.getElementById("btn-enviar-cocina").addEventListener("click", async () 
         id: Date.now().toString(), origen: origenNombre, horaEntrada: new Date().toISOString(),
         items: orden.items.map(it => ({ nombre: it.nombre, cantidad: it.cantidad, nota: it.nota }))
     });
-    guardarComandas(); mostrarUIModal("Éxito", "Comanda enviada a la cocina.");
+    // Bloquea la cantidad de los platillos ya enviados: de aquí en adelante requieren contraseña de Administrador para modificarse
+    orden.items.forEach(it => { it.enviado = true; });
+    guardarComandas(); guardarMesaUOrdenActual(); renderOrden();
+    mostrarUIModal("Éxito", "Comanda enviada a la cocina.");
 });
 
 function renderPantallaCocina() {
@@ -392,8 +419,12 @@ function renderModalDivision() {
     orden.items.forEach(it => {
         if(it.cantidad > 0) {
             const row = document.createElement("div"); row.className = "item-division-row";
-            row.innerHTML = `<span>${it.sandwich || it.cantidad}x ${it.nombre}</span> <button>Separar 1</button>`;
-            row.querySelector("button").addEventListener("click", () => {
+            row.innerHTML = `<span>${it.sandwich || it.cantidad}x ${it.nombre} ${it.enviado ? '<i class="fa-solid fa-lock" style="color:var(--coral); font-size:10px;"></i>' : ''}</span> <button>Separar 1</button>`;
+            row.querySelector("button").addEventListener("click", async () => {
+                if (it.enviado) {
+                    const autorizado = await solicitarPasswordAdmin(`"${it.nombre}" ya fue enviado a cocina. Ingresa la contraseña de Administrador para separarlo/modificarlo:`);
+                    if (!autorizado) return;
+                }
                 it.cantidad -= 1; const enSep = cuentaSeparadaActiva.find(i => i.id === it.id);
                 if(enSep) enSep.cantidad += 1; else cuentaSeparadaActiva.push({ ...it, cantidad: 1 });
                 orden.items = orden.items.filter(i => i.cantidad > 0); renderModalDivision();
@@ -435,6 +466,7 @@ function abrirTicketPreconfigurado(esParcial) {
     porcentajePropina = 10; actualizarBotonesPropina();
     document.getElementById("pago-recibido").value = ""; document.getElementById("bloque-cambio").style.display = "none";
     document.getElementById("metodo-pago").value = "Efectivo"; document.getElementById("bloque-efectivo").style.display = "block";
+    ticketFueImpreso = false; // Cada vez que se abre un nuevo cobro, se debe volver a imprimir antes de poder finalizar
     calcularPreciosFinalesTicket(); document.getElementById("overlay-ticket").style.display = "flex";
 }
 function calcularPreciosFinalesTicket() {
@@ -453,7 +485,7 @@ function calcularPreciosFinalesTicket() {
     }
     bloqueCambio.style.display = "none";
 }
-function confirmarCobro() {
+async function confirmarCobro() {
     const orden = obtenerMesaUOrdenActual(); const productosACobrar = esCobroParcialDeDivision ? cuentaSeparadaActiva : orden.items;
     const subtotal = productosACobrar.reduce((acc, it) => acc + it.precio * it.cantidad, 0);
     const propina = subtotal * (porcentajePropina / 100); const metodo = document.getElementById("metodo-pago").value;
@@ -461,6 +493,11 @@ function confirmarCobro() {
         const pago = parseFloat(document.getElementById("pago-recibido").value || 0);
         if (pago < (subtotal + propina)) { mostrarUIModal("Error", "Efectivo recibido insuficiente."); return; }
     }
+    // No se puede finalizar/cerrar la cuenta si no se ha impreso el ticket
+    if (!ticketFueImpreso) { mostrarUIModal("Falta Imprimir", "Debes imprimir el ticket antes de poder finalizar y cerrar la cuenta."); return; }
+    // Solo el Administrador puede autorizar el cierre de una cuenta
+    const autorizado = await solicitarPasswordAdmin("Solo el Administrador puede cerrar la cuenta. Ingresa la contraseña:");
+    if (!autorizado) return;
     historialVentas.push({ fecha: new Date().toISOString(), mesa: orden ? (esMesaVirtualActiva ? orden.tipo : orden.numero) : "Varios", subtotal: subtotal, propina: propina, metodo: metodo, items: [...productosACobrar] });
     
     if(esCobroParcialDeDivision) {
@@ -660,7 +697,7 @@ document.getElementById("btn-cancelar-mesa").addEventListener("click", cancelarM
 document.getElementById("btn-cobrar").addEventListener("click", abrirTicket);
 document.getElementById("cerrar-ticket").addEventListener("click", () => document.getElementById("overlay-ticket").style.display = "none");
 document.getElementById("btn-confirmar-cobro").addEventListener("click", () => { confirmarCobro(); });
-document.getElementById("btn-imprimir").addEventListener("click", () => window.print());
+document.getElementById("btn-imprimir").addEventListener("click", () => { window.print(); ticketFueImpreso = true; });
 document.getElementById("btn-admin-panel").addEventListener("click", abrirAdminConPassword);
 document.getElementById("btn-volver-admin").addEventListener("click", cerrarAdmin);
 document.getElementById("btn-imprimir-corte").addEventListener("click", imprimirCorteCaja); 
@@ -682,10 +719,47 @@ document.querySelectorAll(".btn-tecla").forEach(t => {
     });
 });
 
-// Inicialización de arranque y bucle continuo cada 3 segundos
-(function iniciar() { 
-    cargarTodo(); 
-    actualizarReloj(); 
-    setInterval(actualizarReloj, 30000); 
+// --- CONTROL DE ACCESO GENERAL A LA PÁGINA ---
+// Nadie puede ver ni usar el sistema sin ingresar primero la contraseña general de acceso.
+function iniciarSistemaPOS() {
+    cargarTodo();
+    actualizarReloj();
+    setInterval(actualizarReloj, 30000);
     setInterval(cargarTodo, 3000); // REFRESCADOR AUTOMÁTICO EN TIEMPO REAL
+}
+
+function mostrarPantallaLogin() {
+    document.getElementById("overlay-login").style.display = "flex";
+    const input = document.getElementById("login-password-input");
+    input.value = "";
+    document.getElementById("login-error-msg").style.display = "none";
+    setTimeout(() => input.focus(), 50);
+}
+
+function intentarIngresoLogin() {
+    const input = document.getElementById("login-password-input");
+    const pw = input.value;
+    if (pw === ACCESS_PASSWORD) {
+        sessionStorage.setItem("mattyAccesoAutorizado", "true");
+        document.getElementById("overlay-login").style.display = "none";
+        iniciarSistemaPOS();
+    } else {
+        document.getElementById("login-error-msg").style.display = "block";
+        input.value = ""; input.focus();
+    }
+}
+
+document.getElementById("btn-login-entrar").addEventListener("click", intentarIngresoLogin);
+document.getElementById("login-password-input").addEventListener("keypress", (e) => {
+    if (e.key === "Enter") intentarIngresoLogin();
+});
+
+// Arranque: si ya se autorizó el acceso en esta sesión del navegador, entra directo; si no, pide la contraseña.
+(function arranqueInicial() {
+    if (sessionStorage.getItem("mattyAccesoAutorizado") === "true") {
+        document.getElementById("overlay-login").style.display = "none";
+        iniciarSistemaPOS();
+    } else {
+        mostrarPantallaLogin();
+    }
 })();
