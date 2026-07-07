@@ -4,10 +4,11 @@ const app = express();
 
 // Permitir que el servidor entienda datos en formato JSON
 app.use(express.json());
-// Servir los archivos estáticos desde la carpeta actual
+// Servir los archivos estáticos (HTML, CSS, JS) desde la carpeta actual
 app.use(express.static(__dirname));
 
 // --- BASE DE DATOS EN MEMORIA DEL SERVIDOR ---
+// Estructura inicial para cuando el servidor encienda por primera vez
 const MENU_INICIAL = {
     "Camarones": [
         { id: "1719870000001", nombre: "Camarones Empanizados", precio: 220 },
@@ -36,14 +37,14 @@ let estadoGlobal = {
     menu: MENU_INICIAL
 };
 
-// --- API ENDPOINTS ---
+// --- RUTAS DE LA API (ENDPOINTS) PARA SINCRONIZACIÓN ---
 
-// Obtener el estado actual
+// Obtener todo el estado actual del restaurante (Caja, mesas, cocina)
 app.get('/api/estado', (req, res) => {
     res.json(estadoGlobal);
 });
 
-// Guardar actualizaciones de cualquier dispositivo
+// Actualizar el estado desde cualquier dispositivo
 app.post('/api/estado', (req, res) => {
     const { mesas, virtuales, comandas, ventas, gastos, menu } = req.body;
     
@@ -54,7 +55,7 @@ app.post('/api/estado', (req, res) => {
     if (gastos) estadoGlobal.gastos = gastos;
     if (menu) estadoGlobal.menu = menu;
 
-    res.json({ okey: true, mensaje: "Servidor centralizado actualizado con éxito" });
+    res.json({ okey: true, mensaje: "Servidor sincronizado" });
 });
 
 // Enrutar cualquier otra petición al index.html
@@ -62,8 +63,8 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Puerto dinámico para Railway
+// Usar el puerto que Railway asigna automáticamente
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`POS Mariscos Matty corriendo en puerto ${PORT}`);
+    console.log(`POS Mariscos Matty en la nube corriendo en puerto ${PORT}`);
 });

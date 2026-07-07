@@ -2,278 +2,308 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mariscos Matty · POS Premium</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mariscos Matty</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.1/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
 
-    <div id="pantalla-bloqueo">
-        <div class="bloqueo-card">
-            <h2><i class="fa-solid fa-shrimp"></i> MARISCOS MATTY</h2>
-            <p>Sistema Control de Ventas & Comandas</p>
-            <div class="input-pin-container">
-                <input type="password" id="input-clave-acceso" placeholder="••••" maxlength="8">
-            </div>
-            <button id="btn-entrar-pos" class="btn btn-gold"><i class="fa-solid fa-key"></i> Acceder al Sistema</button>
+    <div class="top-bar">
+        <div class="marca">
+            <h1>Mariscos <span>Matty</span></h1>
+            <span class="etiqueta-pos">Sistema De Ventas </span>
+            <span class="etiqueta-pos">By:Anuhar Bladimir</span>
+        </div>
+        <div class="top-bar-derecha">
+            <div class="reloj" id="reloj"></div>
+            <button class="btn btn-admin" id="btn-admin-panel"><i class="fa-solid fa-lock"></i> Admin</button>
         </div>
     </div>
 
-    <header class="main-header no-print">
-        <div class="header-logo">
-            <h1>Mariscos Matty <span>POS</span></h1>
-        </div>
-        <div class="header-right">
-            <span id="reloj" class="reloj-badge">Cargando fecha...</span>
-            <button id="btn-admin-panel" class="btn btn-navy"><i class="fa-solid fa-lock"></i> Administrador</button>
-        </div>
-    </header>
+    <div class="tabs-navegacion">
+        <button class="tab-nav activo" id="tab-mesas"><i class="fa-solid fa-chair"></i> Comedor (Mesas)</button>
+        <button class="tab-nav" id="tab-virtuales"><i class="fa-solid fa-bag-shopping"></i> Para Llevar / Domicilio</button>
+        <button class="tab-nav" id="tab-cocina"><i class="fa-solid fa-kitchen-set"></i> Pantalla de Cocina <span class="badge-comandas" id="badge-cocina-count">0</span></button>
+    </div>
 
-    <nav class="main-nav no-print">
-        <button id="tab-mesas" class="tab-nav activo"><i class="fa-solid fa-table-cells"></i> Mesas Comedor</button>
-        <button id="tab-virtuales" class="tab-nav"><i class="fa-solid fa-motorcycle"></i> Para Llevar / Domicilio</button>
-        <button id="tab-cocina" class="tab-nav btn-cocina-tab"><i class="fa-solid fa-kitchen-set"></i> Pantalla Cocina <span id="badge-cocina-count" class="badge-cocina">0</span></button>
-    </nav>
+    <div class="contenedor">
 
-    <main class="content-wrapper no-print">
-        
-        <section id="seccion-mesas" class="seccion-pos">
-            <div class="grid-mesas" id="grid-mesas"></div>
-            <div style="margin-top: 20px; text-align: center;">
-                <button id="btn-agregar-mesa" class="btn btn-navy btn-sm"><i class="fa-solid fa-plus"></i> Añadir Mesa Física</button>
-                <button id="btn-eliminar-mesa" class="btn btn-coral btn-sm"><i class="fa-solid fa-minus"></i> Quitar Última Mesa</button>
+        <div id="seccion-mesas" class="seccion-pos">
+            <div class="mapa-encabezado">
+                <h2>Mesas en Salón</h2>
+                <div class="leyenda">
+                    <span class="leyenda-item"><span class="punto punto-libre"></span>Libre</span>
+                    <span class="leyenda-item"><span class="punto punto-ocupada"></span>Ocupada</span>
+                    <span class="leyenda-item"><span class="punto punto-cuenta"></span>Cuenta pedida</span>
+                </div>
             </div>
-        </section>
+            <div class="grid-mesas" id="grid-mesas"></div>
+        </div>
 
-        <section id="seccion-virtuales" class="seccion-pos" style="display:none;">
-            <div class="top-bar-virtuales">
-                <h3>Servicios de Reparto y Mostrador</h3>
-                <button id="btn-nuevo-pedido-v" class="btn btn-gold"><i class="fa-solid fa-plus"></i> Levantar Nuevo Pedido Externo</button>
+        <div id="seccion-virtuales" class="seccion-pos" style="display: none;">
+            <div class="mapa-encabezado">
+                <h2>Pedidos Fuera de Salón</h2>
+                <button class="btn btn-gold" id="btn-nuevo-pedido-v"><i class="fa-solid fa-plus"></i> Nuevo Pedido Especial</button>
             </div>
             <div class="grid-mesas" id="grid-virtuales"></div>
-        </section>
+        </div>
 
-        <section id="seccion-cocina" class="seccion-pos" style="display:none;">
-            <div class="grid-comandas-cocina" id="grid-comandas-cocina"></div>
-        </section>
+        <div id="seccion-cocina" class="seccion-pos" style="display: none;">
+            <div class="mapa-encabezado">
+                <h2>Comandas en Preparación</h2>
+                <p class="admin-desc">Monitoreo de producción para chefs y barra en tiempo real.</p>
+            </div>
+            <div class="grid-cocina" id="grid-comandas-cocina"></div>
+        </div>
 
-        <section id="vista-mesa" style="display:none;">
-            <div class="vista-mesa-header">
-                <button id="btn-volver" class="btn btn-sand-dark"><i class="fa-solid fa-arrow-left"></i> Volver al Menú</button>
-                <h2 id="titulo-mesa">Mesa X</h2>
-                <span id="badge-cliente-info" class="badge-cliente">Cliente</span>
+        <div id="vista-mesa" class="vista-mesa">
+            <div class="mesa-top">
+                <button class="btn btn-outline" id="btn-volver"><i class="fa-solid fa-arrow-left"></i> Volver</button>
+                <h2 id="titulo-mesa">Mesa</h2>
+                <button class="btn btn-coral" id="btn-cancelar-mesa"><i class="fa-solid fa-rotate-left"></i> Cancelar Pedido</button>
             </div>
 
-            <div class="pos-layout">
-                <div class="menu-productos-zona">
-                    <div class="search-bar-container">
-                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                        <input type="text" id="buscar-platillo" placeholder="Buscar platillo rápido...">
+            <div class="orden-layout">
+                <div>
+                    <div class="categorias" id="categorias"></div>
+                    <div class="buscador-contenedor">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="buscar-platillo" placeholder="Buscar platillo por nombre...">
                     </div>
-                    <div class="categorias-scroll" id="categorias"></div>
-                    <div class="grid-platillos" id="lista-platillos"></div>
+                    <div class="lista-platillos" id="lista-platillos"></div>
                 </div>
 
-                <div class="comanda-lateral-zona">
-                    <h3>Orden Actual</h3>
-                    <div class="orden-lista" id="orden-lista"></div>
-                    
-                    <div class="orden-resumen">
-                        <div class="total-renglon">
-                            <span>Total Cuenta:</span>
-                            <span id="orden-total-valor" class="total-destacado">$0</span>
+                <div class="panel-orden">
+                    <div class="panel-orden-header">
+                        <h3>Orden Actual</h3>
+                        <span id="badge-cliente-info" class="badge-cliente"></span>
+                    </div>
+                    <div id="orden-lista"></div>
+                    <div class="orden-total">
+                        <span>Total</span>
+                        <span id="orden-total-valor">$0</span>
+                    </div>
+                    <div class="panel-acciones">
+                        <button class="btn btn-outline" id="btn-enviar-cocina" style="border-color: var(--teal); color: var(--teal);"><i class="fa-solid fa-fire-burner"></i> Enviar Comanda a Cocina</button>
+                        <button class="btn btn-ghost" id="btn-abrir-division" style="color: var(--amber);"><i class="fa-solid fa-arrows-split-up-and-left"></i> Dividir Cuenta (Cuentas Separadas)</button>
+                        <button class="btn btn-gold" id="btn-cobrar"><i class="fa-solid fa-receipt"></i> Cobrar Cuenta Completa</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="vista-admin" class="vista-admin" style="display: none;">
+            <div class="mesa-top">
+                <button class="btn btn-outline" id="btn-volver-admin"><i class="fa-solid fa-arrow-left"></i> Volver al POS</button>
+                <h2>Panel de Administración</h2>
+                <button class="btn btn-coral" id="btn-borrar-ventas"><i class="fa-solid fa-trash-can"></i> Reset Ventas y Gastos</button>
+            </div>
+
+            <div class="admin-layout">
+                <div class="admin-col-izq">
+                    <div class="admin-card">
+                        <h3><i class="fa-solid fa-chair"></i> Control de Mesas (Salón)</h3>
+                        <div class="admin-acciones-mesas">
+                            <button class="btn" id="btn-agregar-mesa"><i class="fa-solid fa-plus"></i> Agregar 1 Mesa</button>
+                            <button class="btn btn-coral" id="btn-eliminar-mesa"><i class="fa-solid fa-minus"></i> Eliminar Última Mesa</button>
                         </div>
-                        <div class="acciones-comanda-grid">
-                            <button id="btn-enviar-cocina" class="btn btn-navy"><i class="fa-solid fa-paper-plane"></i> Mandar a Cocina</button>
-                            <button id="btn-abrir-division" class="btn btn-sand-dark"><i class="fa-solid fa-arrows-split-up-and-left"></i> Dividir Cuentas</button>
-                            <button id="btn-cobrar" class="btn btn-gold"><i class="fa-solid fa-cash-register"></i> Cobrar Cuenta</button>
+                        <div class="total-mesas-badge">Total actual: <strong id="admin-total-mesas">0</strong> mesas</div>
+                    </div>
+
+                    <div class="admin-card" style="margin-top: 24px;">
+                        <h3><i class="fa-solid fa-wallet"></i> Gastos Extras del Día</h3>
+                        <form id="form-nuevo-gasto" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;">
+                            <input type="text" id="gasto-concepto" placeholder="Concepto (ej. Compra limones)" required style="padding: 8px; border: 1px solid var(--sand-dark); border-radius: 4px; font-size: 13px;">
+                            <input type="number" id="gasto-monto" placeholder="Monto ($)" min="1" required style="padding: 8px; border: 1px solid var(--sand-dark); border-radius: 4px; font-size: 13px;">
+                            <button type="submit" class="btn btn-sm" style="background: var(--ink); color: var(--white);"><i class="fa-solid fa-plus"></i> Registrar Gasto</button>
+                        </form>
+                        <div id="admin-lista-gastos" style="max-height: 120px; overflow-y: auto; font-size: 12px; display: flex; flex-direction: column; gap: 4px;"></div>
+                    </div>
+
+                    <div class="admin-card" style="margin-top: 24px;">
+                        <h3><i class="fa-solid fa-chart-pie"></i> Reporte de Caja</h3>
+                        <div class="reporte-totales">
+                            <div class="total-metodo">💵 Efectivo Bruto: <strong id="rep-efectivo">$0</strong></div>
+                            <div class="total-metodo">💳 Tarjeta: <strong id="rep-tarjeta">$0</strong></div>
+                            <div class="total-metodo" style="color: var(--coral); border-top: 1px solid var(--sand-dark); padding-top:4px;">📉 Gastos Totales: <strong id="rep-total-gastos">-$0</strong></div>
+                            <div class="total-metodo" style="border-top: 2px solid var(--navy); padding-top:8px; font-size:16px; color: var(--navy);">
+                                💰 Balance Neto: <strong id="rep-total-ventas">$0</strong>
+                            </div>
+                            <div class="total-metodo" style="color: var(--teal); font-size: 13px;">❤️ Propinas Acum.: <strong id="rep-total-propinas">$0</strong></div>
                         </div>
+                        <button class="btn btn-gold" id="btn-imprimir-corte" style="width: 100%; margin-top: 15px; padding: 10px;"><i class="fa-solid fa-print"></i> Imprimir Corte de Caja</button>
                     </div>
-                </div>
-            </div>
-        </section>
-
-        <section id="vista-admin" style="display:none;">
-            <div class="vista-mesa-header">
-                <button id="btn-volver-admin" class="btn btn-sand-dark"><i class="fa-solid fa-arrow-left"></i> Salir del Panel</button>
-                <h2>⚙️ Panel de Control de Administración</h2>
-            </div>
-
-            <div class="admin-grid-layout">
-                <div class="admin-card">
-                    <h3>📊 Reporte de Caja de Hoy</h3>
-                    <div class="reporte-ventas-box">
-                        <div class="rep-fila"><span>📥 Efectivo Neto:</span> <strong id="rep-efectivo">$0</strong></div>
-                        <div class="rep-fila"><span>📥 Tarjeta Bancaria:</span> <strong id="rep-tarjeta">$0</strong></div>
-                        <div class="rep-fila"><span>📥 Transferencia:</span> <strong id="rep-transferencia">$0</strong></div>
-                        <div class="rep-fila egreso-color"><span>📤 Gastos / Salidas:</span> <strong id="rep-total-gastos">-$0</strong></div>
-                        <hr>
-                        <div class="rep-fila balance-total-box"><span>💰 GANANCIA EN CAJA:</span> <strong id="rep-total-ventas">$0</strong></div>
-                        <div class="rep-fila propina-color"><span>❤️ Propinas Acumuladas:</span> <strong id="rep-total-propinas">$0</strong></div>
-                    </div>
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:15px;">
-                        <button id="btn-imprimir-corte" class="btn btn-navy"><i class="fa-solid fa-print"></i> Imprimir Corte</button>
-                        <button id="btn-borrar-ventas" class="btn btn-coral"><i class="fa-solid fa-trash-arrow-up"></i> Reset de Día</button>
-                    </div>
-                    <div id="admin-acciones-seguridad"></div>
                 </div>
 
                 <div class="admin-card">
-                    <h3 id="form-admin-titulo">Añadir Platillo</h3>
-                    <form id="form-nuevo-platillo" class="admin-form">
+                    <h3><i class="fa-solid fa-utensils"></i> Gestión del Menú</h3>
+                    <form id="form-nuevo-platillo" class="form-admin">
                         <input type="hidden" id="admin-platillo-id">
-                        <label>Categoría del Menú</label>
-                        <select id="admin-platillo-cat" required></select>
-                        <label>Nombre del Platillo / Bebida</label>
-                        <input type="text" id="admin-platillo-nombre" required placeholder="Ej. Tostada de Ceviche">
-                        <label>Precio al Público ($)</label>
-                        <input type="number" id="admin-platillo-precio" required min="1" placeholder="0">
-                        <div style="display:flex; gap:10px; margin-top:10px;">
-                            <button type="submit" class="btn btn-gold" style="flex:1;"><i class="fa-solid fa-floppy-disk"></i> Guardar</button>
-                            <button type="button" id="btn-cancelar-edicion" class="btn btn-sand-dark" style="display:none;">Cancelar</button>
+                        <h4 id="form-admin-titulo">Añadir Platillo</h4>
+                        <div class="form-group">
+                            <label>Categoría</label>
+                            <select id="admin-platillo-cat" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Nombre del Platillo</label>
+                            <input type="text" id="admin-platillo-nombre" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Precio ($)</label>
+                            <input type="number" id="admin-platillo-precio" min="1" required>
+                        </div>
+                        <div style="display:flex; gap:10px;">
+                            <button type="submit" class="btn btn-gold" style="flex:1; justify-content:center;"><i class="fa-solid fa-floppy-disk"></i> Guardar</button>
+                            <button type="button" class="btn btn-ghost" id="btn-cancelar-edicion" style="display:none;">Cancelar</button>
                         </div>
                     </form>
 
-                    <h3 style="margin-top:20px;">Catálogo Actual</h3>
-                    <div id="admin-lista-categorias-btns" style="display:flex; gap:5px; margin-bottom:10px; overflow-x:auto;"></div>
-                    <div class="tabla-scroll">
+                    <hr style="border:1px dashed var(--sand-dark); margin:20px 0;">
+
+                    <h4>Platillos Registrados</h4>
+                    <div class="admin-lista-categorias" id="admin-lista-categorias-btns"></div>
+                    <div class="admin-tabla-productos">
                         <table>
-                            <thead><tr><th>Producto</th><th>Precio</th><th>Acciones</th></tr></thead>
+                            <thead>
+                                <tr>
+                                    <th>Producto</th>
+                                    <th>Precio</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
                             <tbody id="cuerpo-tabla-admin"></tbody>
                         </table>
                     </div>
                 </div>
-
-                <div class="admin-card">
-                    <h3>💸 Registro de Egresos / Pagos Directos</h3>
-                    <form id="form-nuevo-gasto" class="admin-form">
-                        <label>Concepto del Gasto</label>
-                        <input type="text" id="gasto-concepto" required placeholder="Ej. Kilo de Limón o Pago de Gas">
-                        <label>Monto Retirado ($)</label>
-                        <input type="number" id="gasto-monto" required min="1" placeholder="0">
-                        <button type="submit" class="btn btn-coral" style="width:100%; margin-top:10px;"><i class="fa-solid fa-money-bill-transfer"></i> Restar de Caja</button>
-                    </form>
-                    <h3 style="margin-top:20px;">Lista de Gastos Aplicados</h3>
-                    <div id="admin-lista-gastos" style="display:flex; flex-direction:column; gap:5px; max-height:160px; overflow-y:auto;"></div>
-                    <p style="font-size:11px; margin-top:10px; color:var(--ink-soft);">* Nota: El número total de mesas físicas instaladas es de <strong id="admin-total-mesas">0</strong>.</p>
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <div id="contenedor-ticket-impresion" class="print-only">
-        <div id="ticket-corte-imprimible"></div>
-    </div>
-
-    <div id="overlay-nuevo-virtual" class="modal-overlay no-print" style="display:none;">
-        <div class="modal-card">
-            <h3>Nuevo Pedido Externo</h3>
-            <label>Tipo de Envíos / Despacho</label>
-            <select id="v-tipo-servicio">
-                <option value="Para Llevar">🥡 Pasar a Recoger (Mostrador)</option>
-                <option value="Domicilio">🏍️ Repartidor Local Matty</option>
-                <option value="Uber/Didi">📱 Plataforma (Uber / Didi Food)</option>
-            </select>
-            <label>Nombre o Referencia de Cliente</label>
-            <input type="text" id="v-cliente-nombre" placeholder="Ej. Juan Pérez - Tel 33..." required>
-            <div class="modal-buttons">
-                <button id="btn-cancelar-v" class="btn btn-sand-dark">Cancelar</button>
-                <button id="btn-aceptar-v" class="btn btn-gold">Crear Orden</button>
             </div>
         </div>
+
     </div>
 
-    <div id="overlay-dividir" class="modal-overlay no-print" style="display:none;">
-        <div class="modal-card" style="max-width:650px; width:90%;">
-            <h3><i class="fa-solid fa-arrows-split-up-and-left"></i> Separar Cuentas</h3>
-            <p style="font-size:12px; color:var(--ink-soft); margin-bottom:15px;">Selecciona qué productos se van a cobrar de forma separada en este momento.</p>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; text-align:left;">
-                <div>
-                    <h4 style="border-bottom:2px solid var(--navy); padding-bottom:4px;">Cuenta General</h4>
-                    <div id="division-lista-mesa" style="min-height:150px; max-height:250px; overflow-y:auto; font-size:13px;"></div>
-                </div>
-                <div>
-                    <h4 style="border-bottom:2px solid var(--gold); padding-bottom:4px;">Ticket Parcial a Pagar</h4>
-                    <div id="division-lista-cliente" style="min-height:150px; max-height:250px; overflow-y:auto; font-size:13px;"></div>
-                </div>
+    <div class="overlay" id="overlay-ticket">
+        <div class="ticket">
+            <button class="cerrar-modal" id="cerrar-ticket"><i class="fa-solid fa-xmark"></i></button>
+            <div class="ticket-header">
+                <h3>MARISCOS MATTY</h3>
+                <p>¡Sabor fresco de la costa!</p>
+                <p id="ticket-fecha"></p>
+                <p id="ticket-mesa-info"></p>
+                <p> Este es un ticket de venta no cuenta como factura</p>
             </div>
-            <div style="margin-top:20px; text-align:right; font-size:16px;"><strong>Monto Parcial: <span id="total-separado-valor" style="color:var(--teal); font-size:20px;">$0</span></strong></div>
-            <div class="modal-buttons" style="margin-top:15px;">
-                <button id="cerrar-dividir" class="btn btn-sand-dark">Regresar Productos</button>
-                <button id="btn-cobrar-separado" class="btn btn-gold">Cobrar Solo Esto</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="overlay-ticket" class="modal-overlay no-print" style="display:none;">
-        <div class="modal-ticket-layout">
-            <div class="ticket-vista-previa-papel">
-                <div class="ticket-header">
-                    <h2>MARISCOS MATTY</h2>
-                    <p>Calle Principal de Mariscos #123</p>
-                    <p>La Barca, Jalisco</p>
-                    <hr style="border-top: 1px dashed #aaa; margin:10px 0;">
-                    <p id="ticket-mesa-info">Mesa X</p>
+            
+            <div id="ticket-lineas"></div>
+            
+            <div class="ticket-calculos">
+                <div class="ticket-subtotal-linea">
+                    <span>Subtotal Consumo</span>
+                    <span id="ticket-subtotal-valor">$0</span>
                 </div>
-                <div id="ticket-lineas"></div>
-                <div class="ticket-calculos">
-                    <div class="ticket-subtotal-linea"><span>Subtotal Neto:</span> <span id="ticket-subtotal-valor">$0</span></div>
-                    <div class="ticket-subtotal-linea"><span style="color:var(--teal);">❤️ Propina Sugerida:</span> <span id="ticket-propina-dinero">$0 (10%)</span></div>
-                    <div class="ticket-total"><span>TOTAL A PAGAR:</span> <span id="ticket-total-valor">$0</span></div>
-                </div>
-                <div id="bloque-cambio" class="ticket-calculos egreso-color" style="display:none; margin-top:5px; border-radius:4px;">
-                    <div class="ticket-subtotal-linea" style="font-weight:bold; color:var(--white);"><span>Su Cambio:</span> <span id="ticket-cambio-valor">$0</span></div>
-                </div>
-                <div class="ticket-footer"><p>¡Gracias por su Preferencia!</p><p>Mariscos Matty POS v2.0</p></div>
-            </div>
-
-            <div class="ticket-consola-pagos">
-                <h3>Método de Recepción</h3>
-                <select id="metodo-pago">
-                    <option value="Efectivo">💵 Pago en Efectivo</option>
-                    <option value="Tarjeta">💳 Terminal de Tarjeta Bancaria</option>
-                    <option value="Transferencia">📱 Transferencia Electrónica</option>
-                </select>
-
-                <h3 style="margin-top:15px;">Propina del Servicio</h3>
-                <div class="propina-buttons-row">
-                    <button class="btn-propina" data-pct="0">0%</button>
-                    <button class="btn-propina" data-pct="10">10%</button>
-                    <button class="btn-propina" data-pct="15">15%</button>
-                    <button class="btn-propina" data-pct="20">20%</button>
+                
+                <div class="ticket-subtotal-linea" style="color: var(--teal); font-weight: 600;">
+                    <span>Propina dejada</span>
+                    <span id="ticket-propina-dinero">$0 (10%)</span>
                 </div>
 
-                <div id="bloque-efectivo">
-                    <h3 style="margin-top:15px;">Efectivo Recibido</h3>
-                    <input type="text" id="pago-recibido" readonly placeholder="$0">
-                    <div class="teclado-numerico-grid">
+                <div class="ticket-pago">
+                    <label>Propina Sugerida</label>
+                    <div class="propina-selector">
+                        <button class="btn-propina" data-pct="0">0%</button>
+                        <button class="btn-propina" data-pct="10">10%</button>
+                        <button class="btn-propina" data-pct="15">15%</button>
+                        <button class="btn-propina" data-pct="20">20%</button>
+                    </div>
+                </div>
+                
+                <div class="ticket-total"><span>TOTAL A PAGAR</span><span id="ticket-total-valor">$0</span></div>
+
+                <hr style="border: 1px dashed var(--sand-dark); margin: 12px 0;">
+
+                <div class="ticket-pago">
+                    <label>Método de pago</label>
+                    <select id="metodo-pago">
+                        <option value="Efectivo">💵 Efectivo</option>
+                        <option value="Tarjeta">💳 Tarjeta</option>
+
+                    </select>
+                </div>
+
+                <div class="ticket-pago" id="bloque-efectivo">
+                    <label>¿Con cuánto paga el cliente?</label>
+                    <input type="number" id="pago-recibido" readonly>
+                    <div class="teclado-grid">
                         <button class="btn-tecla" data-val="1">1</button><button class="btn-tecla" data-val="2">2</button><button class="btn-tecla" data-val="3">3</button>
                         <button class="btn-tecla" data-val="4">4</button><button class="btn-tecla" data-val="5">5</button><button class="btn-tecla" data-val="6">6</button>
                         <button class="btn-tecla" data-val="7">7</button><button class="btn-tecla" data-val="8">8</button><button class="btn-tecla" data-val="9">9</button>
-                        <button class="btn-tecla" data-val="C" style="background:var(--coral); color:var(--white);">C</button><button class="btn-tecla" data-val="0">0</button><button class="btn-tecla" data-val="del"><i class="fa-solid fa-delete-left"></i></button>
+                        <button class="btn-tecla btn-tecla-accion" data-val="C">C</button><button class="btn-tecla" data-val="0">0</button><button class="btn-tecla btn-tecla-accion" data-val="del"><i class="fa-solid fa-backspace"></i></button>
                     </div>
+                    <div class="cambio-resultado" id="bloque-cambio" style="display:none;"><span>Su cambio:</span><strong id="ticket-cambio-valor">$0</strong></div>
                 </div>
-
-                <div class="modal-buttons" style="margin-top:20px;">
-                    <button id="cerrar-ticket" class="btn btn-sand-dark">Cerrar</button>
-                    <button id="btn-imprimir" class="btn btn-navy"><i class="fa-solid fa-print"></i> Pre-Ticket</button>
-                    <button id="btn-confirmar-cobro" class="btn btn-gold" style="font-size:16px;"><i class="fa-solid fa-circle-check"></i> Liquidar Cuenta</button>
-                </div>
+            </div>
+            <div class="ticket-acciones">
+                <button class="btn btn-gold" id="btn-confirmar-cobro"><i class="fa-solid fa-circle-check"></i> Finalizar y Cerrar Cuenta</button>
+                <button class="btn btn-ghost" id="btn-imprimir"><i class="fa-solid fa-print"></i> Imprimir Ticket</button>
             </div>
         </div>
     </div>
 
-    <div id="overlay-ui" class="modal-overlay no-print" style="display:none; z-index:10000;">
-        <div class="modal-card" style="max-width:400px; padding:25px;">
-            <h3 id="ui-modal-titulo">Confirmación</h3>
-            <p id="ui-modal-mensaje" style="margin:12px 0; color:var(--ink); font-size:14px; line-height:1.4;"></p>
-            <div id="ui-modal-input-container" style="display:none; margin-bottom:15px;">
-                <input type="password" id="ui-modal-input" style="width:100%; font-size:18px; padding:8px; border-radius:6px; text-align:center; border:1px solid var(--sand-dark);">
+    <div id="ticket-corte-imprimible" class="ticket" style="display: none;"></div>
+
+    <div class="overlay" id="overlay-dividir">
+        <div class="ticket" style="max-width: 500px;">
+            <button class="cerrar-modal" id="cerrar-dividir"><i class="fa-solid fa-xmark"></i></button>
+            <div class="ticket-header">
+                <h3>Dividir Cuenta</h3>
+                <p>Selecciona los productos que pagará este cliente de forma individual.</p>
             </div>
-            <div class="modal-buttons">
-                <button id="btn-ui-cancelar" class="btn btn-sand-dark" style="padding:8px 16px;">No, Cancelar</button>
-                <button id="btn-ui-aceptar" class="btn btn-gold" style="padding:8px 20px;">Sí, Aceptar</button>
+            <div class="division-layout">
+                <div class="division-col">
+                    <h4>Productos en la Mesa</h4>
+                    <div id="division-lista-mesa" class="lista-division-scroll"></div>
+                </div>
+                <div class="division-col" style="background: var(--sand); padding: 10px; border-radius: 8px;">
+                    <h4>Cuenta Separada a Cobrar</h4>
+                    <div id="division-lista-cliente" class="lista-division-scroll"></div>
+                    <div class="total-division-box">Total Separado: <strong id="total-separado-valor">$0</strong></div>
+                </div>
+            </div>
+            <div class="ticket-acciones" style="margin-top: 15px;">
+                <button class="btn btn-gold" id="btn-cobrar-separado"><i class="fa-solid fa-cash-register"></i> Proceder a Cobrar Fracción</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="overlay" id="overlay-nuevo-virtual">
+        <div class="ui-modal" style="max-width: 400px;">
+            <h3>Nuevo Pedido Especial</h3>
+            <div class="form-group" style="text-align: left; margin-top: 15px;">
+                <label>Tipo de Servicio</label>
+                <select id="v-tipo-servicio">
+                    <option value="Llevar">🥡 Para Llevar</option>
+                    <option value="Domicilio">🏍️ Servicio a Domicilio</option>
+                </select>
+            </div>
+            <div class="form-group" style="text-align: left;">
+                <label>Nombre del Cliente / Ref</label>
+                <input type="text" id="v-cliente-nombre" placeholder="Ej: Juan Pérez">
+            </div>
+            <div class="ui-modal-botones">
+                <button class="btn btn-ghost" id="btn-cancelar-v">Cancelar</button>
+                <button class="btn btn-gold" id="btn-aceptar-v">Abrir Pedido</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="overlay" id="overlay-ui">
+        <div class="ui-modal">
+            <h3 id="ui-modal-titulo">Confirmación</h3>
+            <p id="ui-modal-mensaje">¿Estás seguro?</p>
+            <div id="ui-modal-input-container" style="display:none; margin: 15px 0 5px 0;">
+                <input type="password" id="ui-modal-input" class="ticket-pago input">
+            </div>
+            <div class="ui-modal-botones">
+                <button class="btn btn-ghost" id="btn-ui-cancelar">Cancelar</button>
+                <button class="btn" id="btn-ui-aceptar">Aceptar</button>
             </div>
         </div>
     </div>
