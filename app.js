@@ -1,4 +1,5 @@
 const ADMIN_PASSWORD = "1234";
+let ES_ADMIN_AUTENTICADO = false; 
 
 let MENU = {};
 let estadoMesas = [];
@@ -17,10 +18,29 @@ let adminCategoriaActiva = "";
 let porcentajePropina = 10;
 let busquedaFiltro = "";
 
-// --- MOTOR DE SINCRONIZACIÓN CON EL SERVIDOR NUBE ---
+// --- SISTEMA DE CONTROL DE PANTALLA DE BLOQUEO ACCESO ---
+document.getElementById("btn-entrar-pos").addEventListener("click", verificarAccesoInicial);
+document.getElementById("input-clave-acceso").addEventListener("keypress", (e) => {
+    if(e.key === "Enter") verificarAccesoInicial();
+});
 
-// Cargar datos desde el servidor centralizado
+function verificarAccesoInicial() {
+    const clave = document.getElementById("input-clave-acceso").value;
+    if(clave === ADMIN_PASSWORD) {
+        document.getElementById("pantalla-bloqueo").style.display = "none";
+        // Disparar carga del sistema operativo al liberar pantalla
+        cargarTodo();
+    } else {
+        alert("❌ Clave de acceso incorrecta.");
+        document.getElementById("input-clave-acceso").value = "";
+    }
+}
+
+// --- CONFIGURACIÓN DE RESPUESTA DE SINCRONIZACIÓN CLOUD ---
 async function cargarTodo() {
+    // Romper petición si sigue bloqueado
+    if(document.getElementById("pantalla-bloqueo").style.display !== "none") return;
+    
     try {
         const respuesta = await fetch('/api/estado');
         const datos = await respuesta.json();
@@ -37,14 +57,12 @@ async function cargarTodo() {
             adminCategoriaActiva = Object.keys(MENU)[0];
         }
 
-        // Refrescar la pantalla en la que se encuentre el usuario actualmente
         redibujarPantallaActual();
     } catch (error) {
-        console.error("Error al sincronizar con la central:", error);
+        console.error("Error sincronizando nubes virtuales Railway:", error);
     }
 }
 
-// Enviar cambios al servidor de forma inmediata al hacer una acción
 async function guardarCambiosEnServidor() {
     try {
         await fetch('/api/estado', {
@@ -60,29 +78,14 @@ async function guardarCambiosEnServidor() {
             })
         });
     } catch (error) {
-        console.error("Error al subir cambios a la central:", error);
+        console.error("Error transmitiendo datos al servidor maestro:", error);
     }
 }
 
-// Controla qué se debe actualizar visualmente sin romper la escritura del usuario
 function redibujarPantallaActual() {
     actualizarBadgeCocina();
-    
-    // Si la vista de detalle de una mesa está abierta, solo actualiza la lista de la orden lateral
-    if (document.getElementById("vista-mesa").style.display === "block") {
-        renderOrden();
-        return;
-    }
-    
-    // Si está en el panel de administración, refresca reportes
-    if (document.getElementById("vista-admin").style.display === "block") {
-        document.getElementById("admin-total-mesas").textContent = estadoMesas.length;
-        renderGastosEnAdmin();
-        calcularReporteVentas();
-        return;
-    }
-
-    // Si está en las pestañas generales, refresca los mapas
+    if (document.getElementById("vista-mesa").style.display === "block") { renderOrden(); return; }
+    if (document.getElementById("vista-admin").style.display === "block") { renderAdmin(); return; }
     if (document.getElementById("seccion-mesas").style.display === "block") renderMapa();
     if (document.getElementById("seccion-virtuales").style.display === "block") renderPedidosVirtuales();
     if (document.getElementById("seccion-cocina").style.display === "block") renderPantallaCocina();
@@ -95,7 +98,6 @@ function guardarVentas() { guardarCambiosEnServidor(); }
 function guardarComandas() { guardarCambiosEnServidor(); }
 function guardarGastos() { guardarCambiosEnServidor(); }
 
-// Formateadores y Ayudantes
 function formatoMoneda(valor) { return "$" + Math.round(valor).toLocaleString("es-MX"); }
 function obtenerMesaUOrdenActual() { return esMesaVirtualActiva ? pedidosVirtuales[mesaActivaIndex] : estadoMesas[mesaActivaIndex]; }
 function guardarMesaUOrdenActual() { guardarCambiosEnServidor(); }
@@ -104,23 +106,16 @@ function calcularSubtotalMesa(mesa) {
     return mesa.items.reduce((acc, it) => acc + it.precio * it.cantidad, 0); 
 }
 
-// Reloj Costero
 function actualizarReloj() {
-    const el = document.getElementById("reloj");
-    if (!el) return;
+    const el = document.getElementById("reloj"); if (!el) return;
     const ahora = new Date();
-    el.textContent = ahora.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" }) +
-        " · " + ahora.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
-    
-    if(document.getElementById("seccion-cocina").style.display === "block") renderPantallaCocina();
+    el.textContent = ahora.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" }) + " · " + ahora.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
 }
-
 function actualizarBadgeCocina() {
-    const badge = document.getElementById("badge-cocina-count");
-    if(badge) badge.textContent = comandasCocina.length;
+    const badge = document.getElementById("badge-cocina-count"); if(badge) badge.textContent = comandasCocina.length;
 }
 
-// MODAL DE ALERTAS UI PERSONALIZADA
+// INTERFAZ MODAL INTERNA COMPACTA
 let resolverUIModal = null;
 function mostrarUIModal(titulo, mensaje, conInput = false) {
     return new Promise((resolver) => {
@@ -130,8 +125,7 @@ function mostrarUIModal(titulo, mensaje, conInput = false) {
         const inputCont = document.getElementById("ui-modal-input-container");
         const inputVal = document.getElementById("ui-modal-input");
         inputVal.value = "";
-        if(conInput) { inputCont.style.display = "block"; inputVal.focus(); }
-        else { inputCont.style.display = "none"; }
+        if(conInput) { inputCont.style.display = "block"; inputVal.focus(); } else { inputCont.style.display = "none"; }
         document.getElementById("overlay-ui").style.display = "flex";
     });
 }
@@ -144,20 +138,17 @@ document.getElementById("btn-ui-aceptar").addEventListener("click", () => {
     }
 });
 document.getElementById("btn-ui-cancelar").addEventListener("click", () => {
-    document.getElementById("overlay-ui").style.display = "none";
-    if (resolverUIModal) resolverUIModal(false);
+    document.getElementById("overlay-ui").style.display = "none"; if (resolverUIModal) resolverUIModal(false);
 });
 
-// ENRUTADOR DE PESTAÑAS (TABS)
+// CONTROL DE RUTAS DE PESTAÑAS
 function cambiarSeccionPrincipal(tabId, seccionId) {
     document.querySelectorAll(".tab-nav").forEach(t => t.classList.remove("activo"));
     document.querySelectorAll(".seccion-pos").forEach(s => s.style.display = "none");
     document.getElementById("vista-mesa").style.display = "none";
     document.getElementById("vista-admin").style.display = "none";
-    
     document.getElementById(tabId).classList.add("activo");
     document.getElementById(seccionId).style.display = "block";
-
     if(seccionId === "seccion-mesas") renderMapa();
     if(seccionId === "seccion-virtuales") renderPedidosVirtuales();
     if(seccionId === "seccion-cocina") renderPantallaCocina();
@@ -166,133 +157,98 @@ document.getElementById("tab-mesas").addEventListener("click", () => cambiarSecc
 document.getElementById("tab-virtuales").addEventListener("click", () => cambiarSeccionPrincipal("tab-virtuales", "seccion-virtuales"));
 document.getElementById("tab-cocina").addEventListener("click", () => cambiarSeccionPrincipal("tab-cocina", "seccion-cocina"));
 
-// VISTA 1: COMEDOR
 function renderMapa() {
-    const grid = document.getElementById("grid-mesas");
-    if(!grid) return; grid.innerHTML = "";
+    const grid = document.getElementById("grid-mesas"); if(!grid) return; grid.innerHTML = "";
     estadoMesas.forEach((mesa, idx) => {
         const total = calcularSubtotalMesa(mesa);
         const card = document.createElement("button");
         card.className = "mesa-card " + (mesa.estado === "ocupada" ? "ocupada" : mesa.estado === "cuenta" ? "cuenta" : "");
-        card.innerHTML = `
-            <span class="mesa-numero">Mesa ${mesa.numero}</span>
-            <span class="mesa-estado">${mesa.estado === "libre" ? "Libre" : mesa.estado === "ocupada" ? "Ocupada" : "Cuenta pedida"}</span>
-            ${mesa.estado === "libre" ? '<span class="mesa-vacia">Toca para abrir</span>' : `<span class="mesa-total">${formatoMoneda(total)}</span>`}
-        `;
-        card.addEventListener("click", () => {
-            esMesaVirtualActiva = false;
-            abrirMesaOOrden(idx, `Mesa ${mesa.numero}`);
-        });
+        card.innerHTML = `<span class="mesa-numero">Mesa ${mesa.numero}</span><span class="mesa-estado">${mesa.estado === "libre" ? "Libre" : mesa.estado === "ocupada" ? "Ocupada" : "Cuenta pedida"}</span>${mesa.estado === "libre" ? '<span class="mesa-vacia">Toca para abrir</span>' : `<span class="mesa-total">${formatoMoneda(total)}</span>`}`;
+        card.addEventListener("click", () => { esMesaVirtualActiva = false; abrirMesaOOrden(idx, `Mesa ${mesa.numero}`); });
         grid.appendChild(card);
     });
 }
 
-// VISTA 2: PARA LLEVAR / DOMICILIO
 function renderPedidosVirtuales() {
-    const grid = document.getElementById("grid-virtuales");
-    if(!grid) return; grid.innerHTML = "";
-    if(pedidosVirtuales.length === 0) {
-        grid.innerHTML = "<p style='color:var(--ink-soft); grid-column:1/-1; text-align:center; padding:40px 0;'>No hay pedidos fuera de salón activos.</p>";
-        return;
-    }
+    const grid = document.getElementById("grid-virtuales"); if(!grid) return; grid.innerHTML = "";
+    if(pedidosVirtuales.length === 0) { grid.innerHTML = "<p style='color:var(--ink-soft); grid-column:1/-1; text-align:center; padding:40px 0;'>No hay pedidos fuera de salón activos.</p>"; return; }
     pedidosVirtuales.forEach((ped, idx) => {
-        const total = calcularSubtotalMesa(ped);
-        const card = document.createElement("button");
+        const total = calcularSubtotalMesa(ped); const card = document.createElement("button");
         card.className = "mesa-card " + (ped.estado === "ocupada" ? "ocupada" : ped.estado === "cuenta" ? "cuenta" : "");
         let icono = ped.tipo === "Domicilio" ? "🏍️" : ped.tipo === "Uber/Didi" ? "📱" : "🥡";
-        card.innerHTML = `
-            <span class="mesa-numero" style="font-size:20px;">${icono} ${ped.tipo}</span>
-            <span class="mesa-estado" style="margin-bottom:4px; font-size:12px; text-transform:none;"><b>Ref:</b> ${ped.cliente}</span>
-            <span class="mesa-estado">${ped.estado === "ocupada" ? "En Proceso" : "Cuenta Solicitada"}</span>
-            <span class="mesa-total">${formatoMoneda(total)}</span>
-        `;
-        card.addEventListener("click", () => {
-            esMesaVirtualActiva = true;
-            abrirMesaOOrden(idx, `${icono} ${ped.tipo}`);
-        });
+        card.innerHTML = `<span class="mesa-numero" style="font-size:20px;">${icono} ${ped.tipo}</span><span class="mesa-estado" style="margin-bottom:4px; font-size:12px;"><b>Ref:</b> ${ped.cliente}</span><span class="mesa-estado">${ped.estado === "ocupada" ? "En Proceso" : "Cuenta Solicitada"}</span><span class="mesa-total">${formatoMoneda(total)}</span>`;
+        card.addEventListener("click", () => { esMesaVirtualActiva = true; abrirMesaOOrden(idx, `${icono} ${ped.tipo}`); });
         grid.appendChild(card);
     });
 }
-
-document.getElementById("btn-nuevo-pedido-v").addEventListener("click", () => {
-    document.getElementById("v-cliente-nombre").value = "";
-    document.getElementById("overlay-nuevo-virtual").style.display = "flex";
-});
+document.getElementById("btn-nuevo-pedido-v").addEventListener("click", () => { document.getElementById("v-cliente-nombre").value = ""; document.getElementById("overlay-nuevo-virtual").style.display = "flex"; });
 document.getElementById("btn-cancelar-v").addEventListener("click", () => document.getElementById("overlay-nuevo-virtual").style.display = "none");
 document.getElementById("btn-aceptar-v").addEventListener("click", () => {
-    const tipo = document.getElementById("v-tipo-servicio").value;
-    const cliente = document.getElementById("v-cliente-nombre").value.trim() || "Cliente General";
+    const tipo = document.getElementById("v-tipo-servicio").value; const cliente = document.getElementById("v-cliente-nombre").value.trim() || "Cliente General";
     pedidosVirtuales.push({ id: "v" + Date.now(), tipo: tipo, cliente: cliente, estado: "ocupada", items: [] });
-    guardarVirtuales();
-    document.getElementById("overlay-nuevo-virtual").style.display = "none";
-    esMesaVirtualActiva = true;
-    abrirMesaOOrden(pedidosVirtuales.length - 1, tipo);
+    guardarVirtuales(); document.getElementById("overlay-nuevo-virtual").style.display = "none"; esMesaVirtualActiva = true; abrirMesaOOrden(pedidosVirtuales.length - 1, tipo);
 });
 
-// DETALLE DE PEDIDOS Y PANEL DE ORDEN
 function abrirMesaOOrden(idx, tituloVisual) {
     mesaActivaIndex = idx;
-    document.getElementById("seccion-mesas").style.display = "none";
-    document.getElementById("seccion-virtuales").style.display = "none";
-    document.getElementById("seccion-cocina").style.display = "none";
+    document.getElementById("seccion-mesas").style.display = "none"; document.getElementById("seccion-virtuales").style.display = "none"; document.getElementById("seccion-cocina").style.display = "none";
     document.getElementById("titulo-mesa").textContent = tituloVisual;
-    
-    const badgeCli = document.getElementById("badge-cliente-info");
-    const ordenObj = obtenerMesaUOrdenActual();
-    if(esMesaVirtualActiva && ordenObj) {
-        badgeCli.style.display = "inline-block"; badgeCli.textContent = ordenObj.cliente;
-    } else { badgeCli.style.display = "none"; }
-    document.getElementById("vista-mesa").style.display = "block";
-    busquedaFiltro = ""; document.getElementById("buscar-platillo").value = "";
+    const badgeCli = document.getElementById("badge-cliente-info"); const ordenObj = obtenerMesaUOrdenActual();
+    if(esMesaVirtualActiva && ordenObj) { badgeCli.style.display = "inline-block"; badgeCli.textContent = ordenObj.cliente; } else { badgeCli.style.display = "none"; }
+    document.getElementById("vista-mesa").style.display = "block"; busquedaFiltro = ""; document.getElementById("buscar-platillo").value = "";
     renderMesa();
 }
-
 function regresarAOrigen() { if (esMesaVirtualActiva) cambiarSeccionPrincipal("tab-virtuales", "seccion-virtuales"); else cambiarSeccionPrincipal("tab-mesas", "seccion-mesas"); }
 document.getElementById("btn-volver").addEventListener("click", regresarAOrigen);
 
 function renderCategorias() {
-    const cont = document.getElementById("categorias");
-    if(!cont) return; cont.innerHTML = "";
+    const cont = document.getElementById("categorias"); if(!cont) return; cont.innerHTML = "";
     Object.keys(MENU).forEach((cat) => {
-        const btn = document.createElement("button");
-        btn.className = "cat-btn " + (cat === categoriaActiva ? "activo" : "");
-        btn.textContent = cat;
-        btn.addEventListener("click", () => { categoriaActiva = cat; renderCategorias(); renderPlatillos(); });
-        cont.appendChild(btn);
+        const btn = document.createElement("button"); btn.className = "cat-btn " + (cat === categoriaActiva ? "activo" : ""); btn.textContent = cat;
+        btn.addEventListener("click", () => { categoriaActiva = cat; renderCategorias(); renderPlatillos(); }); cont.appendChild(btn);
     });
 }
-
 function renderPlatillos() {
-    const cont = document.getElementById("lista-platillos");
-    if(!cont) return; cont.innerHTML = "";
+    const cont = document.getElementById("lista-platillos"); if(!cont) return; cont.innerHTML = "";
     let lista = [];
     if (busquedaFiltro.trim() !== "") {
-        Object.keys(MENU).forEach(cat => {
-            MENU[cat].forEach(p => { if(p.nombre.toLowerCase().includes(busquedaFiltro.toLowerCase())) lista.push(p); });
-        });
+        Object.keys(MENU).forEach(cat => { MENU[cat].forEach(p => { if(p.nombre.toLowerCase().includes(busquedaFiltro.toLowerCase())) lista.push(p); }); });
     } else { lista = MENU[categoriaActiva] || []; }
     if(lista.length === 0) { cont.innerHTML = "<p style='color:var(--ink-soft); grid-column:1/-1;'>No se encontraron productos.</p>"; return; }
     lista.forEach((p) => {
         const card = document.createElement("div"); card.className = "platillo-card";
         card.innerHTML = `<h4>${p.nombre}</h4><span class="precio">${formatoMoneda(p.precio)}</span><button>Agregar</button>`;
-        card.querySelector("button").addEventListener("click", () => agregarItem(p));
-        cont.appendChild(card);
+        card.querySelector("button").addEventListener("click", () => agregarItem(p)); cont.appendChild(card);
     });
 }
 
 function agregarItem(platillo) {
     const orden = obtenerMesaUOrdenActual();
     const existente = orden.items.find((it) => it.id === platillo.id);
-    if (existente) existente.cantidad += 1;
-    else orden.items.push({ id: platillo.id, nombre: platillo.nombre, precio: platillo.precio, cantidad: 1, nota: "" });
+    if (existente) {
+        // REGLA CANDADO COMANDAS: Bloquear adición si ya se envió a cocina y es mesero normal
+        if(existente.enviado && !ES_ADMIN_AUTENTICADO) {
+            mostrarUIModal("Comanda Bloqueada", "Este platillo ya fue mandado a cocina. Solicita apoyo de supervisión para agregar más.");
+            return;
+        }
+        existente.cantidad += 1;
+    } else {
+        orden.items.push({ id: platillo.id, nombre: platillo.nombre, precio: platillo.precio, cantidad: 1, nota: "", enviado: false });
+    }
     if (orden.estado === "libre") orden.estado = "ocupada";
     guardarMesaUOrdenActual(); renderMesa();
 }
 
+// REGLA CANDADO COMANDAS: Bloquear alteración directa si ya está en cocina
 function cambiarCantidad(itemId, delta) {
-    const orden = obtenerMesaUOrdenActual();
-    const item = orden.items.find((it) => it.id === itemId);
+    const orden = obtenerMesaUOrdenActual(); const item = orden.items.find((it) => it.id === itemId);
     if (!item) return;
+
+    if(item.enviado && !ES_ADMIN_AUTENTICADO) {
+        mostrarUIModal("Operación Denegada", "Comanda enviada y bloqueada. Solo el Administrador puede reducir/editar estas cantidades.");
+        return;
+    }
+
     item.cantidad += delta;
     if (item.cantidad <= 0) orden.items = orden.items.filter((it) => it.id !== itemId);
     if (orden.items.length === 0 && !esMesaVirtualActiva) orden.estado = "libre";
@@ -300,27 +256,30 @@ function cambiarCantidad(itemId, delta) {
 }
 
 function guardarNotaItem(itemId, textoNota) {
-    const orden = obtenerMesaUOrdenActual();
-    const item = orden.items.find((it) => it.id === itemId);
-    if (item) { item.nota = textoNota.trim(); guardarMesaUOrdenActual(); }
+    const orden = obtenerMesaUOrdenActual(); const item = orden.items.find((it) => it.id === itemId);
+    if (item) {
+        if(item.enviado && !ES_ADMIN_AUTENTICADO) return; 
+        item.nota = textoNota.trim(); guardarMesaUOrdenActual();
+    }
 }
 
 function renderOrden() {
-    const orden = obtenerMesaUOrdenActual();
-    const cont = document.getElementById("orden-lista");
-    if(!cont) return; cont.innerHTML = "";
+    const orden = obtenerMesaUOrdenActual(); const cont = document.getElementById("orden-lista"); if(!cont) return; cont.innerHTML = "";
     if (!orden || orden.items.length === 0) { cont.innerHTML = '<p class="orden-vacia">Aún no hay productos.</p>'; }
     else {
         orden.items.forEach((it) => {
             const fila = document.createElement("div"); fila.className = "orden-item";
+            const candado = it.enviado ? " <span style='color:var(--coral); font-size:11px; font-weight:bold;'>🔒 En Cocina</span>" : "";
             fila.innerHTML = `
                 <div style="flex:1;">
-                    <div class="nombre">${it.nombre}</div>
+                    <div class="nombre">${it.nombre}${candado}</div>
                     <div class="subtotal">${formatoMoneda(it.precio * it.cantidad)}</div>
-                    <div class="nota-cocina-box"><input type="text" class="input-nota" placeholder="✍️ Nota de cocina..." value="${it.nota || ''}"></div>
+                    <div class="nota-cocina-box"><input type="text" class="input-nota" placeholder="✍️ Nota..." value="${it.nota || ''}" ${it.enviado && !ES_ADMIN_AUTENTICADO ? 'disabled' : ''}></div>
                 </div>
                 <div class="qty-control">
-                    <button class="btn-menos">−</button><span>${it.cantidad}</span><button class="btn-mas">+</button>
+                    <button class="btn-menos" ${it.enviado && !ES_ADMIN_AUTENTICADO ? 'style="opacity:0.25; cursor:not-allowed;"' : ''}>−</button>
+                    <span>${it.cantidad}</span>
+                    <button class="btn-mas" ${it.enviado && !ES_ADMIN_AUTENTICADO ? 'style="opacity:0.25; cursor:not-allowed;"' : ''}>+</button>
                 </div>
             `;
             fila.querySelector(".btn-menos").addEventListener("click", () => cambiarCantidad(it.id, -1));
@@ -333,33 +292,42 @@ function renderOrden() {
 }
 function renderMesa() { renderCategorias(); renderPlatillos(); renderOrden(); }
 
-async function cancelarMesa() {
+// FUNCIÓN MOVIDA: Ejecución de cancelación de la mesa únicamente desde entorno Administrador autorizado
+async function ejecutarCancelarMesaDesdeAdmin() {
+    if(mesaActivaIndex === null) return alert("Selecciona la mesa que deseas vaciar / liberar.");
     const orden = obtenerMesaUOrdenActual();
-    if (orden.items.length > 0) {
-        if (!await mostrarUIModal("¿Cancelar Todo?", "¿Deseas limpiar por completo este pedido?")) return;
-    }
+    if (!await mostrarUIModal("⚠️ CONFIGURACIÓN AUDITORÍA", `¿Confirmas que deseas CANCELAR de forma definitiva todo el consumo de esta mesa? Esta acción no se puede deshacer.`)) return;
+    
     if (esMesaVirtualActiva) { pedidosVirtuales = pedidosVirtuales.filter((_, idx) => idx !== mesaActivaIndex); }
     else { orden.items = []; orden.estado = "libre"; }
-    guardarCambiosEnServidor();
-    regresarAOrigen();
+    
+    guardarCambiosEnServidor(); cerrarAdmin(); regresarAOrigen();
 }
 
-// PANTALLA DE COCINA
+// DESPACHO Y ENVÍO A COMANDEROS DE COCINA
 document.getElementById("btn-enviar-cocina").addEventListener("click", async () => {
     const orden = obtenerMesaUOrdenActual();
-    if(!orden || orden.items.length === 0) return mostrarUIModal("Aviso", "No hay platillos que mandar a cocina.");
+    if(!orden || orden.items.length === 0) return mostrarUIModal("Aviso", "No hay platillos registrados.");
+    
+    let nuevosFiltrados = orden.items.filter(it => !it.enviado);
+    if(nuevosFiltrados.length === 0) return mostrarUIModal("Aviso", "Todos los productos en la lista ya fueron enviados.");
+
     let origenNombre = esMesaVirtualActiva ? `${orden.tipo} (${orden.cliente.substring(0,8)})` : `Mesa ${orden.numero}`;
     comandasCocina.push({
         id: Date.now().toString(), origen: origenNombre, horaEntrada: new Date().toISOString(),
-        items: orden.items.map(it => ({ nombre: it.nombre, cantidad: it.cantidad, nota: it.nota }))
+        items: nuevosFiltrados.map(it => ({ nombre: it.nombre, cantidad: it.cantidad, nota: it.nota }))
     });
-    guardarComandas(); mostrarUIModal("Éxito", "Comanda enviada a la cocina.");
+
+    // Marcar items como enviados
+    orden.items.forEach(it => it.enviado = true);
+
+    guardarCambiosEnServidor(); mostrarUIModal("Éxito", "Comanda enviada. Productos bloqueados para meseros.");
+    renderMesa();
 });
 
 function renderPantallaCocina() {
-    const grid = document.getElementById("grid-comandas-cocina");
-    if(!grid) return; grid.innerHTML = "";
-    if(comandasCocina.length === 0) { grid.innerHTML = "<p style='color:var(--ink-soft); grid-column:1/-1; text-align:center; padding:40px 0;'>🔥 Cocina limpia.</p>"; return; }
+    const grid = document.getElementById("grid-comandas-cocina"); if(!grid) return; grid.innerHTML = "";
+    if(comandasCocina.length === 0) { grid.innerHTML = "<p style='color:var(--ink-soft); grid-column:1/-1; text-align:center; padding:40px 0;'>🔥 Todo en orden. Cocina limpia.</p>"; return; }
     comandasCocina.forEach((com, idx) => {
         const minutos = Math.floor((new Date() - new Date(com.horaEntrada)) / 60000);
         const card = document.createElement("div"); card.className = "comanda-card " + (minutos >= 15 ? "critica" : "lista");
@@ -370,67 +338,48 @@ function renderPantallaCocina() {
     });
 }
 
-// DIVISIÓN DE CUENTAS (CUENTAS SEPARADAS)
+// DIVISIÓN DE TICKET
 document.getElementById("btn-abrir-division").addEventListener("click", () => {
-    const orden = obtenerMesaUOrdenActual();
-    if(!orden || orden.items.length === 0) return mostrarUIModal("Aviso", "No hay consumos que separar.");
+    const orden = obtenerMesaUOrdenActual(); if(!orden || orden.items.length === 0) return mostrarUIModal("Aviso", "Sin productos para dividir.");
     cuentaSeparadaActiva = []; renderModalDivision(); document.getElementById("overlay-dividir").style.display = "flex";
 });
 document.getElementById("cerrar-dividir").addEventListener("click", () => {
     const orden = obtenerMesaUOrdenActual();
-    cuentaSeparadaActiva.forEach(itemSep => {
-        const original = orden.items.find(i => i.id === itemSep.id);
-        if(original) original.sandwich += itemSep.cantidad; else orden.items.push(itemSep);
-    });
+    cuentaSeparadaActiva.forEach(itemSep => { const original = orden.items.find(i => i.id === itemSep.id); if(original) original.cantidad += itemSep.cantidad; else orden.items.push(itemSep); });
     cuentaSeparadaActiva = []; guardarMesaUOrdenActual(); document.getElementById("overlay-dividir").style.display = "none"; renderMesa();
 });
 function renderModalDivision() {
-    const orden = obtenerMesaUOrdenActual();
-    const contMesa = document.getElementById("division-lista-mesa");
-    const contCliente = document.getElementById("division-lista-cliente");
-    contMesa.innerHTML = ""; contCliente.innerHTML = ""; let totalSeparado = 0;
+    const orden = obtenerMesaUOrdenActual(); const contMesa = document.getElementById("division-lista-mesa"); const contCliente = document.getElementById("division-lista-cliente"); contMesa.innerHTML = ""; contCliente.innerHTML = ""; let totalSeparado = 0;
     orden.items.forEach(it => {
         if(it.cantidad > 0) {
-            const row = document.createElement("div"); row.className = "item-division-row";
-            row.innerHTML = `<span>${it.sandwich || it.cantidad}x ${it.nombre}</span> <button>Separar 1</button>`;
+            const row = document.createElement("div"); row.className = "item-division-row"; row.innerHTML = `<span>${it.cantidad}x ${it.nombre}</span> <button>Separar 1</button>`;
             row.querySelector("button").addEventListener("click", () => {
-                it.cantidad -= 1; const enSep = cuentaSeparadaActiva.find(i => i.id === it.id);
-                if(enSep) enSep.cantidad += 1; else cuentaSeparadaActiva.push({ ...it, cantidad: 1 });
+                it.cantidad -= 1; const enSep = cuentaSeparadaActiva.find(i => i.id === it.id); if(enSep) enSep.cantidad += 1; else cuentaSeparadaActiva.push({ ...it, cantidad: 1 });
                 orden.items = orden.items.filter(i => i.cantidad > 0); renderModalDivision();
-            });
-            contMesa.appendChild(row);
+            }); contMesa.appendChild(row);
         }
     });
     cuentaSeparadaActiva.forEach((it, idx) => {
-        totalSeparado += (it.precio * it.cantidad);
-        const row = document.createElement("div"); row.className = "item-division-row";
-        row.innerHTML = `<span>${it.cantidad}x ${it.nombre}</span> <button>Devolver</button>`;
+        totalSeparado += (it.precio * it.cantidad); const row = document.createElement("div"); row.className = "item-division-row"; row.innerHTML = `<span>${it.cantidad}x ${it.nombre}</span> <button>Devolver</button>`;
         row.querySelector("button").addEventListener("click", () => {
-            it.cantidad -= 1; const original = orden.items.find(i => i.id === it.id);
-            if(original) original.cantidad += 1; else orden.items.push({ ...it, cantidad: 1 });
-            if(it.cantidad <= 0) cuentaSeparadaActiva = cuentaSeparadaActiva.filter((_, i) => i !== idx);
-            renderModalDivision();
-        });
-        contCliente.appendChild(row);
+            it.cantidad -= 1; const original = orden.items.find(i => i.id === it.id); if(original) original.cantidad += 1; else orden.items.push({ ...it, cantidad: 1 });
+            if(it.cantidad <= 0) cuentaSeparadaActiva = cuentaSeparadaActiva.filter((_, i) => i !== idx); renderModalDivision();
+        }); contCliente.appendChild(row);
     });
     document.getElementById("total-separado-valor").textContent = formatoMoneda(totalSeparado);
 }
 
-// SISTEMA CENTRAL DE COBRO (MODAL TICKET VENTA)
+// CAJA Y PROCESADOR DE PAGOS
 function abrirTicket() { abrirTicketPreconfigurado(false); }
 function abrirTicketPreconfigurado(esParcial) {
-    esCobroParcialDeDivision = esParcial; const orden = obtenerMesaUOrdenActual();
-    const productosACobrar = esParcial ? cuentaSeparadaActiva : orden.items;
+    esCobroParcialDeDivision = esParcial; const orden = obtenerMesaUOrdenActual(); const productosACobrar = esParcial ? cuentaSeparadaActiva : orden.items;
     if (productosACobrar.length === 0) return;
     if(!esParcial) { orden.estado = "cuenta"; guardarMesaUOrdenActual(); }
-    let tituloCabecera = esMesaVirtualActiva ? `${orden.tipo}` : `Mesa ${orden.numero}`;
-    if(esParcial) tituloCabecera += " (Pago Parcial)";
-    document.getElementById("ticket-mesa-info").textContent = `${tituloCabecera} · ${new Date().toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })}`;
+    let tituloCabecera = esMesaVirtualActiva ? `${orden.tipo}` : `Mesa ${orden.numero}`; if(esParcial) tituloCabecera += " (Parcial)";
+    document.getElementById("ticket-mesa-info").textContent = `${tituloCabecera} · ${new Date().toLocaleString("es-MX")}`;
     const lineas = document.getElementById("ticket-lineas"); lineas.innerHTML = "";
     productosACobrar.forEach((it) => {
-        const l = document.createElement("div"); l.className = "ticket-linea-producto";
-        l.innerHTML = `<div class="ticket-linea-main"><span>${it.cantidad}x ${it.nombre}</span> <span>${formatoMoneda(it.precio * it.cantidad)}</span></div>`;
-        lineas.appendChild(l);
+        const l = document.createElement("div"); l.className = "ticket-linea-producto"; l.innerHTML = `<div class="ticket-linea-main"><span>${it.cantidad}x ${it.nombre}</span> <span>${formatoMoneda(it.precio * it.cantidad)}</span></div>`; lineas.appendChild(l);
     });
     porcentajePropina = 10; actualizarBotonesPropina();
     document.getElementById("pago-recibido").value = ""; document.getElementById("bloque-cambio").style.display = "none";
@@ -438,187 +387,132 @@ function abrirTicketPreconfigurado(esParcial) {
     calcularPreciosFinalesTicket(); document.getElementById("overlay-ticket").style.display = "flex";
 }
 function calcularPreciosFinalesTicket() {
-    const orden = obtenerMesaUOrdenActual();
-    const subtotal = esCobroParcialDeDivision ? cuentaSeparadaActiva.reduce((acc, it) => acc + it.precio * it.cantidad, 0) : calcularSubtotalMesa(orden);
+    const orden = obtenerMesaUOrdenActual(); const subtotal = esCobroParcialDeDivision ? cuentaSeparadaActiva.reduce((acc, it) => acc + it.precio * it.cantidad, 0) : calcularSubtotalMesa(orden);
     const propina = subtotal * (porcentajePropina / 100); const totalConPropina = subtotal + propina;
     document.getElementById("ticket-subtotal-valor").textContent = formatoMoneda(subtotal);
-    const txtPropina = document.getElementById("ticket-propina-dinero");
-    if(txtPropina) txtPropina.textContent = `${formatoMoneda(propina)} (${porcentajePropina}%)`;
+    const txtPropina = document.getElementById("ticket-propina-dinero"); if(txtPropina) txtPropina.textContent = `${formatoMoneda(propina)} (${porcentajePropina}%)`;
     document.getElementById("ticket-total-valor").textContent = formatoMoneda(totalConPropina);
-    const pagoRecibidoInput = document.getElementById("pago-recibido").value;
-    const bloqueCambio = document.getElementById("bloque-cambio");
+    const pagoRecibidoInput = document.getElementById("pago-recibido").value; const bloqueCambio = document.getElementById("bloque-cambio");
     if (pagoRecibidoInput && document.getElementById("metodo-pago").value === "Efectivo") {
-        const pago = parseFloat(pagoRecibidoInput);
-        if (pago >= totalConPropina) { bloqueCambio.style.display = "flex"; document.getElementById("ticket-cambio-valor").textContent = formatoMoneda(pago - totalConPropina); return; }
+        const pago = parseFloat(pagoRecibidoInput); if (pago >= totalConPropina) { bloqueCambio.style.display = "flex"; document.getElementById("ticket-cambio-valor").textContent = formatoMoneda(pago - totalConPropina); return; }
     }
     bloqueCambio.style.display = "none";
 }
 function confirmarCobro() {
     const orden = obtenerMesaUOrdenActual(); const productosACobrar = esCobroParcialDeDivision ? cuentaSeparadaActiva : orden.items;
-    const subtotal = productosACobrar.reduce((acc, it) => acc + it.precio * it.cantidad, 0);
-    const propina = subtotal * (porcentajePropina / 100); const metodo = document.getElementById("metodo-pago").value;
-    if (metodo === "Efectivo") {
-        const pago = parseFloat(document.getElementById("pago-recibido").value || 0);
-        if (pago < (subtotal + propina)) { mostrarUIModal("Error", "Efectivo recibido insuficiente."); return; }
-    }
+    const subtotal = productosACobrar.reduce((acc, it) => acc + it.precio * it.cantidad, 0); const propina = subtotal * (porcentajePropina / 100); const metodo = document.getElementById("metodo-pago").value;
+    if (metodo === "Efectivo") { const pago = parseFloat(document.getElementById("pago-recibido").value || 0); if (pago < (subtotal + propina)) { alert("Efectivo insuficiente."); return; } }
     historialVentas.push({ fecha: new Date().toISOString(), mesa: orden ? (esMesaVirtualActiva ? orden.tipo : orden.numero) : "Varios", subtotal: subtotal, propina: propina, metodo: metodo, items: [...productosACobrar] });
-    
-    if(esCobroParcialDeDivision) {
-        cuentaSeparadaActiva = []; if(orden.items.length === 0 && !esMesaVirtualActiva) orden.estado = "libre"; else if (orden.items.length > 0) orden.estado = "ocupada"; 
-    } else { if(esMesaVirtualActiva) pedidosVirtuales = pedidosVirtuales.filter((_, idx) => idx !== mesaActivaIndex); else { orden.items = []; orden.estado = "libre"; } }
-    
-    guardarCambiosEnServidor();
-    document.getElementById("overlay-ticket").style.display = "none"; 
-    regresarAOrigen();
+    if(esCobroParcialDeDivision) { cuentaSeparadaActiva = []; if(orden.items.length === 0 && !esMesaVirtualActiva) orden.estado = "libre"; else if (orden.items.length > 0) orden.estado = "ocupada"; }
+    else { if(esMesaVirtualActiva) pedidosVirtuales = pedidosVirtuales.filter((_, idx) => idx !== mesaActivaIndex); else { orden.items = []; orden.estado = "libre"; } }
+    guardarCambiosEnServidor(); document.getElementById("overlay-ticket").style.display = "none"; regresarAOrigen();
 }
 function actualizarBotonesPropina() {
     document.querySelectorAll(".btn-propina").forEach(btn => {
-        const pct = parseInt(btn.getAttribute("data-pct"));
-        if(pct === porcentajePropina) { btn.style.background = "var(--navy)"; btn.style.color = "var(--white)"; }
-        else { btn.style.background = "var(--sand-dark)"; btn.style.color = "var(--navy)"; }
+        const pct = parseInt(btn.getAttribute("data-pct")); if(pct === porcentajePropina) { btn.style.background = "var(--navy)"; btn.style.color = "var(--white)"; } else { btn.style.background = "var(--sand-dark)"; btn.style.color = "var(--navy)"; }
     });
 }
-document.getElementById("btn-cobrar-separado").addEventListener("click", () => {
-    if(cuentaSeparadaActiva.length === 0) return mostrarUIModal("Error", "Debes transferir mínimo un producto.");
-    document.getElementById("overlay-dividir").style.display = "none"; abrirTicketPreconfigurado(true);
-});
+document.getElementById("btn-cobrar-separado").addEventListener("click", () => { if(cuentaSeparadaActiva.length === 0) return; document.getElementById("overlay-dividir").style.display = "none"; abrirTicketPreconfigurado(true); });
 
-// ADMINISTRACIÓN, REPORTES Y NUEVO PANEL DE GASTOS EXTRAS
+// PANEL ADMINISTRADOR CONTROL CENTRAL
 async function abrirAdminConPassword() {
     const pw = await mostrarUIModal("Seguridad", "Ingresa la contraseña de Administrador:", true);
     if (pw === ADMIN_PASSWORD) {
-        document.getElementById("seccion-mesas").style.display = "none"; document.getElementById("seccion-virtuales").style.display = "none";
-        document.getElementById("seccion-cocina").style.display = "none"; document.getElementById("vista-mesa").style.display = "none";
+        ES_ADMIN_AUTENTICADO = true; 
+        document.getElementById("seccion-mesas").style.display = "none"; document.getElementById("seccion-virtuales").style.display = "none"; document.getElementById("seccion-cocina").style.display = "none"; document.getElementById("vista-mesa").style.display = "none";
         document.getElementById("vista-admin").style.display = "block"; renderAdmin();
-    } else if (pw !== false) { mostrarUIModal("Error", "Contraseña incorrecta."); }
+    } else if (pw !== false) { mostrarUIModal("Error", "Contraseña de Administrador Incorrecta."); }
 }
-function cerrarAdmin() { document.getElementById("vista-admin").style.display = "none"; cambiarSeccionPrincipal("tab-mesas", "seccion-mesas"); }
+function cerrarAdmin() { 
+    ES_ADMIN_AUTENTICADO = false; 
+    document.getElementById("vista-admin").style.display = "none"; cambiarSeccionPrincipal("tab-mesas", "seccion-mesas"); 
+}
 
 function renderAdmin() {
     document.getElementById("admin-total-mesas").textContent = estadoMesas.length;
+    
+    // --- INTEGRACIÓN: BOTÓN DINÁMICO PARA ELIMINAR / CANCELAR CUENTAS DESDE ADMIN ---
+    const contenedorAccionesSeguras = document.getElementById("admin-acciones-seguridad"); 
+    contenedorAccionesSeguras.innerHTML = "";
+    if(mesaActivaIndex !== null) {
+        const divBox = document.createElement("div"); divBox.style = "margin-top:15px; padding-top:15px; border-top:1px dashed var(--coral);";
+        divBox.innerHTML = `<button id="btn-admin-cancelar-mesa-activa" class="btn btn-coral" style="width:100%; font-weight:bold;"><i class="fa-solid fa-trash-can"></i> Cancelar / Vaciar Pedido Activo</button>`;
+        contenedorAccionesSeguras.appendChild(divBox);
+        document.getElementById("btn-admin-cancelar-mesa-activa").addEventListener("click", ejecutarCancelarMesaDesdeAdmin);
+    }
+
     const selectCat = document.getElementById("admin-platillo-cat"); selectCat.innerHTML = "";
     Object.keys(MENU).forEach(cat => { const opt = document.createElement("option"); opt.value = cat; opt.textContent = cat; selectCat.appendChild(opt); });
-
     const contBtns = document.getElementById("admin-lista-categorias-btns"); contBtns.innerHTML = "";
     Object.keys(MENU).forEach(cat => {
-        const btn = document.createElement("button"); btn.className = "cat-btn " + (cat === adminCategoriaActiva ? "activo" : "");
-        btn.style.padding = "6px 14px"; btn.style.fontSize = "12px"; btn.textContent = cat;
+        const btn = document.createElement("button"); btn.className = "cat-btn " + (cat === adminCategoriaActiva ? "activo" : ""); btn.style.padding = "6px 14px"; btn.style.fontSize = "12px"; btn.textContent = cat;
         btn.addEventListener("click", () => { adminCategoriaActiva = cat; renderAdmin(); }); contBtns.appendChild(btn);
     });
-
     const cuerpoTabla = document.getElementById("cuerpo-tabla-admin"); cuerpoTabla.innerHTML = "";
     if(MENU[adminCategoriaActiva]) {
         MENU[adminCategoriaActiva].forEach((p) => {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `<td><strong>${p.nombre}</strong></td><td>${formatoMoneda(p.precio)}</td><td><button class="btn btn-sm btn-editar"><i class="fa-solid fa-pen"></i> Editar</button><button class="btn btn-coral btn-sm btn-eliminar"><i class="fa-solid fa-trash"></i></button></td>`;
-            tr.querySelector(".btn-editar").addEventListener("click", () => cargarPlatilloEnFormulario(p, adminCategoriaActiva));
-            tr.querySelector(".btn-eliminar").addEventListener("click", () => ejecutarEliminarPlatillo(adminCategoriaActiva, p.id));
-            cuerpoTabla.appendChild(tr);
+            const tr = document.createElement("tr"); tr.innerHTML = `<td><strong>${p.nombre}</strong></td><td>${formatoMoneda(p.precio)}</td><td><button class="btn btn-sm btn-editar"><i class="fa-solid fa-pen"></i> Editar</button><button class="btn btn-coral btn-sm btn-eliminar"><i class="fa-solid fa-trash"></i></button></td>`;
+            tr.querySelector(".btn-editar").addEventListener("click", () => cargarPlatilloEnFormulario(p, adminCategoriaActiva)); tr.querySelector(".btn-eliminar").addEventListener("click", () => ejecutarEliminarPlatillo(adminCategoriaActiva, p.id)); cuerpoTabla.appendChild(tr);
         });
     }
-    renderGastosEnAdmin();
-    calcularReporteVentas();
+    renderGastosEnAdmin(); calcularReporteVentas();
 }
 
 function renderGastosEnAdmin() {
-    const listaCont = document.getElementById("admin-lista-gastos");
-    if(!listaCont) return; listaCont.innerHTML = "";
-    if(listaGastos.length === 0) { listaCont.innerHTML = "<span style='color:var(--ink-soft); font-style:italic;'>No hay gastos registrados hoy.</span>"; return; }
+    const listaCont = document.getElementById("admin-lista-gastos"); if(!listaCont) return; listaCont.innerHTML = "";
+    if(listaGastos.length === 0) { listaCont.innerHTML = "<span style='color:var(--ink-soft); font-style:italic;'>No hay gastos de caja registrados.</span>"; return; }
     listaGastos.forEach((g, idx) => {
-        const div = document.createElement("div");
-        div.style = "display:flex; justify-content:space-between; background:var(--sand); padding:4px 8px; border-radius:4px; align-items:center;";
+        const div = document.createElement("div"); div.style = "display:flex; justify-content:space-between; background:var(--sand); padding:4px 8px; border-radius:4px; align-items:center; margin-bottom:4px; font-size:13px;";
         div.innerHTML = `<span>📌 ${g.concepto}</span> <span><b>-${formatoMoneda(g.monto)}</b> <i class="fa-solid fa-circle-xmark" style="color:var(--coral); cursor:pointer; margin-left:6px;" data-idx="${idx}"></i></span>`;
-        div.querySelector("i").addEventListener("click", () => {
-            listaGastos.splice(idx, 1); guardarGastos(); renderAdmin();
-        });
-        listaCont.appendChild(div);
+        div.querySelector("i").addEventListener("click", () => { listaGastos.splice(idx, 1); guardarGastos(); renderAdmin(); }); listaCont.appendChild(div);
     });
 }
-
 document.getElementById("form-nuevo-gasto").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const concepto = document.getElementById("gasto-concepto").value.trim();
-    const monto = parseFloat(document.getElementById("gasto-monto").value);
-    listaGastos.push({ concepto: concepto, monto: monto, fecha: new Date().toISOString() });
-    guardarGastos(); document.getElementById("form-nuevo-gasto").reset(); renderAdmin();
+    e.preventDefault(); const concepto = document.getElementById("gasto-concepto").value.trim(); const monto = parseFloat(document.getElementById("gasto-monto").value);
+    listaGastos.push({ concepto: concepto, monto: monto, fecha: new Date().toISOString() }); guardarGastos(); document.getElementById("form-nuevo-gasto").reset(); renderAdmin();
 });
 
 function calcularReporteVentas() {
     let efec = 0, tarj = 0, trans = 0, propinas = 0;
-    historialVentas.forEach(v => {
-        propinas += v.propina;
-        if(v.metodo === "Efectivo") efec += v.subtotal;
-        if(v.metodo === "Tarjeta") tarj += v.subtotal;
-        if(v.metodo === "Transferencia") trans += v.subtotal;
-    });
-    const totalGastos = listaGastos.reduce((acc, g) => acc + g.monto, 0);
-    const balanceNetoFinal = (efec + tarj + trans) - totalGastos;
-
-    document.getElementById("rep-efectivo").textContent = formatoMoneda(efec);
-    document.getElementById("rep-tarjeta").textContent = formatoMoneda(tarj);
-    document.getElementById("rep-transferencia").textContent = formatoMoneda(trans);
-    document.getElementById("rep-total-gastos").textContent = `-${formatoMoneda(totalGastos)}`;
-    document.getElementById("rep-total-ventas").textContent = formatoMoneda(balanceNetoFinal);
-    document.getElementById("rep-total-propinas").textContent = formatoMoneda(propinas);
+    historialVentas.forEach(v => { propinas += v.propina; if(v.metodo === "Efectivo") efec += v.subtotal; if(v.metodo === "Tarjeta") tarj += v.subtotal; if(v.metodo === "Transferencia") trans += v.subtotal; });
+    const totalGastos = listaGastos.reduce((acc, g) => acc + g.monto, 0); const balanceNetoFinal = (efec + tarj + trans) - totalGastos;
+    document.getElementById("rep-efectivo").textContent = formatoMoneda(efec); document.getElementById("rep-tarjeta").textContent = formatoMoneda(tarj); document.getElementById("rep-transferencia").textContent = formatoMoneda(trans);
+    document.getElementById("rep-total-gastos").textContent = `-${formatoMoneda(totalGastos)}`; document.getElementById("rep-total-ventas").textContent = formatoMoneda(balanceNetoFinal); document.getElementById("rep-total-propinas").textContent = formatoMoneda(propinas);
 }
 
 function imprimirCorteCaja() {
     let efec = 0, tarj = 0, trans = 0, propinas = 0;
-    historialVentas.forEach(v => {
-        propinas += v.propina;
-        if(v.metodo === "Efectivo") efec += v.subtotal;
-        if(v.metodo === "Tarjeta") tarj += v.subtotal;
-        if(v.metodo === "Transferencia") trans += v.subtotal;
-    });
-    const totalBruto = efec + tarj + trans;
-    const totalGastos = listaGastos.reduce((acc, g) => acc + g.monto, 0);
-    const balanceNetoFinal = totalBruto - totalGastos;
-
+    historialVentas.forEach(v => { propinas += v.propina; if(v.metodo === "Efectivo") efec += v.subtotal; if(v.metodo === "Tarjeta") tarj += v.subtotal; if(v.metodo === "Transferencia") trans += v.subtotal; });
+    const totalBruto = efec + tarj + trans; const totalGastos = listaGastos.reduce((acc, g) => acc + g.monto, 0); const balanceNetoFinal = totalBruto - totalGastos;
     const contCorte = document.getElementById("ticket-corte-imprimible");
     contCorte.innerHTML = `
-        <div class="ticket-header">
-            <h3>MARISCOS MATTY</h3>
-            <p><b>*** CORTE DE CAJA / CIERRE DIARIO ***</b></p>
-            <p>Generado: ${new Date().toLocaleString("es-MX")}</p>
-        </div>
+        <div class="ticket-header"><h3>MARISCOS MATTY</h3><p><b>*** CORTE DE CAJA TOTAL ***</b></p><p>${new Date().toLocaleString("es-MX")}</p></div>
         <div class="ticket-calculos" style="background:transparent; padding:0;">
-            <div class="ticket-subtotal-linea"><span>💵 Ventas Efectivo:</span> <span>${formatoMoneda(efec)}</span></div>
-            <div class="ticket-subtotal-linea"><span>💳 Ventas Tarjeta:</span> <span>${formatoMoneda(tarj)}</span></div>
-            <div class="ticket-subtotal-linea"><span>📱 Ventas Transf:</span> <span>${formatoMoneda(trans)}</span></div>
+            <div class="ticket-subtotal-linea"><span>💵 Efectivo:</span> <span>${formatoMoneda(efec)}</span></div>
+            <div class="ticket-subtotal-linea"><span>💳 Tarjeta:</span> <span>${formatoMoneda(tarj)}</span></div>
+            <div class="ticket-subtotal-linea"><span>📱 Transf:</span> <span>${formatoMoneda(trans)}</span></div>
             <hr style="border:1px dashed #000; margin:6px 0;">
-            <div class="ticket-subtotal-linea" style="font-size:14px; color:#000;"><span>💰 Total Ventas Brutas:</span> <span>${formatoMoneda(totalBruto)}</span></div>
-            <div class="ticket-subtotal-linea" style="color:var(--teal);"><span>❤️ Total Propinas Recibidas:</span> <span>${formatoMoneda(propinas)}</span></div>
+            <div class="ticket-subtotal-linea" style="font-size:14px; color:#000;"><span>💰 Bruto total:</span> <span>${formatoMoneda(totalBruto)}</span></div>
+            <div class="ticket-subtotal-linea" style="color:var(--teal);"><span>❤️ Propinas:</span> <span>${formatoMoneda(propinas)}</span></div>
         </div>
-        <hr style="border:1px dashed #000; margin:10px 0;">
-        <div class="ticket-header" style="text-align:left; border:none; margin:0; padding:0;">
-            <p><b>DESGLOSE DE GASTOS EXTRAS DEUDORES:</b></p>
-        </div>
+        <hr style="border:1px dashed #000; margin:10px 0;"><p><b>EGRESOS / SALIDAS APLICADAS:</b></p>
         <div style="font-size:12px; margin-top:6px; display:flex; flex-direction:column; gap:4px;">
-            ${listaGastos.map(g => `<div style="display:flex; justify-content:between;"><span>• ${g.concepto}</span><span>-${formatoMoneda(g.monto)}</span></div>`).join("")}
-            ${listaGastos.length === 0 ? "<div><i>No se registraron gastos de caja hoy.</i></div>" : ""}
+            ${listaGastos.map(g => `<div style="display:flex; justify-content:space-between;"><span>• ${g.concepto}</span><span>-${formatoMoneda(g.monto)}</span></div>`).join("")}
+            ${listaGastos.length === 0 ? "<div><i>Sin egresos de caja chica hoy.</i></div>" : ""}
         </div>
         <hr style="border:1px dashed #000; margin:10px 0;">
         <div class="ticket-calculos" style="background:#f1f1f1; padding:10px; border-radius:4px;">
-            <div class="ticket-subtotal-linea"><span>Subtotal Ingresos:</span> <span>${formatoMoneda(totalBruto)}</span></div>
-            <div class="ticket-subtotal-linea" style="color:var(--coral);"><span>(-) Egresos Gastos:</span> <span>-${formatoMoneda(totalGastos)}</span></div>
-            <div class="ticket-total" style="border-top-color:#000; padding-top:6px; margin-top:6px;">
-                <span>GANANCIA NETO CAJA</span>
-                <span>${formatoMoneda(balanceNetoFinal)}</span>
-            </div>
-        </div>
-        <div class="ticket-header" style="border:none; margin-top:30px;">
-            <p style="border-top:1px solid #000; display:inline-block; padding-top:4px; width:150px;">Firma Supervisor</p>
+            <div class="ticket-subtotal-linea"><span>Ventas Brutas:</span> <span>${formatoMoneda(totalBruto)}</span></div>
+            <div class="ticket-subtotal-linea" style="color:var(--coral);"><span>(-) Egresos:</span> <span>-${formatoMoneda(totalGastos)}</span></div>
+            <div class="ticket-total" style="border-top-color:#000; padding-top:6px; margin-top:6px;"><span>TOTAL NETO EN CAJA</span><span>${formatoMoneda(balanceNetoFinal)}</span></div>
         </div>
     `;
     window.print();
 }
 
 function cargarPlatilloEnFormulario(platillo, category) {
-    document.getElementById("form-admin-titulo").textContent = "Modificar Platillo";
-    document.getElementById("admin-platillo-id").value = platillo.id;
-    document.getElementById("admin-platillo-cat").value = category;
-    document.getElementById("admin-platillo-nombre").value = platillo.nombre;
-    document.getElementById("admin-platillo-precio").value = platillo.precio;
+    document.getElementById("form-admin-titulo").textContent = "Modificar Platillo"; document.getElementById("admin-platillo-id").value = platillo.id;
+    document.getElementById("admin-platillo-cat").value = category; document.getElementById("admin-platillo-nombre").value = platillo.nombre; document.getElementById("admin-platillo-precio").value = platillo.precio;
     document.getElementById("btn-cancelar-edicion").style.display = "inline-flex";
 }
 function limpiarFormularioAdmin() {
@@ -627,36 +521,28 @@ function limpiarFormularioAdmin() {
 }
 async function ejecutarEliminarPlatillo(category, id) {
     const platillo = MENU[category].find(p => p.id === id); if (!platillo) return;
-    if(await mostrarUIModal("Eliminar?", `¿Eliminar "${platillo.nombre}"?`)) { 
-        MENU[category] = MENU[category].filter(p => p.id !== id); 
-        guardarMenu(); 
-    }
+    if(await mostrarUIModal("Eliminar?", `¿Eliminar "${platillo.nombre}" de forma permanente del menú?`)) { MENU[category] = MENU[category].filter(p => p.id !== id); guardarMenu(); }
 }
 
 document.getElementById("btn-agregar-mesa").addEventListener("click", () => { estadoMesas.push({ numero: estadoMesas.length + 1, estado: "libre", items: [] }); guardarMesas(); });
 document.getElementById("btn-eliminar-mesa").addEventListener("click", async () => {
-    if(estadoMesas.length === 0) return; const ultima = estadoMesas[estadoMesas.length - 1];
-    if(ultima.estado !== "libre") return mostrarUIModal("Error", "La mesa está ocupada.");
-    if(await mostrarUIModal("Remover?", `¿Remover Mesa ${ultima.numero}?`)) { estadoMesas.pop(); guardarMesas(); }
+    if(estadoMesas.length === 0) return; const ultima = estadoMesas[estadoMesas.length - 1]; if(ultima.estado !== "libre") return alert("No puedes quitar una mesa ocupada.");
+    if(await mostrarUIModal("Remover?", `¿Remover Mesa ${ultima.numero} del mapa de salón?`)) { estadoMesas.pop(); guardarMesas(); }
 });
 
 document.getElementById("form-nuevo-platillo").addEventListener("submit", (e) => {
-    e.preventDefault(); const idExistente = document.getElementById("admin-platillo-id").value;
-    const cat = document.getElementById("admin-platillo-cat").value; const nombre = document.getElementById("admin-platillo-nombre").value.trim();
-    const precio = parseFloat(document.getElementById("admin-platillo-precio").value);
+    e.preventDefault(); const idExistente = document.getElementById("admin-platillo-id").value; const cat = document.getElementById("admin-platillo-cat").value;
+    const nombre = document.getElementById("admin-platillo-nombre").value.trim(); const precio = parseFloat(document.getElementById("admin-platillo-precio").value);
     if (idExistente) { Object.keys(MENU).forEach(c => { MENU[c] = MENU[c].filter(p => p.id !== idExistente); }); MENU[cat].push({ id: idExistente, nombre: nombre, precio: precio }); }
     else { MENU[cat].push({ id: Date.now().toString(), nombre: nombre, precio: precio }); }
     guardarMenu(); limpiarFormularioAdmin(); adminCategoriaActiva = cat;
 });
 document.getElementById("btn-cancelar-edicion").addEventListener("click", limpiarFormularioAdmin);
 document.getElementById("btn-borrar-ventas").addEventListener("click", async () => {
-    if(await mostrarUIModal("Reset?", "¡Cuidado! ¿Borrar de forma permanente todas las ventas e historial de gastos registrados hoy?")) {
-        historialVentas = []; listaGastos = []; guardarVentas(); guardarGastos();
-    }
+    if(await mostrarUIModal("Reset de Caja?", "¡Alerta! Esta acción vaciará por completo el acumulado de ventas del día actual.")) { historialVentas = []; listaGastos = []; guardarVentas(); guardarGastos(); }
 });
 
-// LISTENERS
-document.getElementById("btn-cancelar-mesa").addEventListener("click", cancelarMesa);
+// LISTENERS OPERATIVOS
 document.getElementById("btn-cobrar").addEventListener("click", abrirTicket);
 document.getElementById("cerrar-ticket").addEventListener("click", () => document.getElementById("overlay-ticket").style.display = "none");
 document.getElementById("btn-confirmar-cobro").addEventListener("click", () => { confirmarCobro(); });
@@ -670,22 +556,18 @@ document.querySelectorAll(".btn-propina").forEach(btn => {
     btn.addEventListener("click", (e) => { porcentajePropina = parseInt(e.target.getAttribute("data-pct")); actualizarBotonesPropina(); calcularPreciosFinalesTicket(); });
 });
 document.getElementById("metodo-pago").addEventListener("change", (e) => {
-    document.getElementById("bloque-efectivo").style.display = (e.target.value === "Efectivo") ? "block" : "none";
-    document.getElementById("pago-recibido").value = ""; calcularPreciosFinalesTicket();
+    document.getElementById("bloque-efectivo").style.display = (e.target.value === "Efectivo") ? "block" : "none"; document.getElementById("pago-recibido").value = ""; calcularPreciosFinalesTicket();
 });
 document.querySelectorAll(".btn-tecla").forEach(t => {
     t.addEventListener("click", (e) => {
-        let targ = e.target; if(targ.tagName === "I") targ = targ.parentElement;
-        const key = targ.getAttribute("data-val"); const inp = document.getElementById("pago-recibido");
+        let targ = e.target; if(targ.tagName === "I") targ = targ.parentElement; const key = targ.getAttribute("data-val"); const inp = document.getElementById("pago-recibido");
         if(key === "C") inp.value = ""; else if (key === "del") inp.value = inp.value.slice(0,-1); else if (inp.value.length < 6) inp.value += key;
         calcularPreciosFinalesTicket();
     });
 });
 
-// Inicialización de arranque y bucle continuo cada 3 segundos
-(function iniciar() { 
-    cargarTodo(); 
-    actualizarReloj(); 
-    setInterval(actualizarReloj, 30000); 
-    setInterval(cargarTodo, 3000); // REFRESCADOR AUTOMÁTICO EN TIEMPO REAL
+// INICIALIZACIÓN
+(function iniciar() {
+    actualizarReloj(); setInterval(actualizarReloj, 30000); 
+    setInterval(cargarTodo, 3000); // REFRESCADOR AUTOMÁTICO EN TIEMPO REAL ACTIVO CADA 3 SEG
 })();
