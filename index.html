@@ -3,31 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mariscos Matty</title>
+    <title>Mariscos Matty - POS</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.1/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-    <div class="overlay overlay-login" id="overlay-login" style="display:flex; z-index:5000; background:linear-gradient(135deg, var(--navy) 0%, var(--navy-deep) 100%);">
+    <!-- LOGIN -->
+    <div class="overlay overlay-login" id="overlay-login" style="display:flex; z-index:5000; background:linear-gradient(135deg, #1B3A4B 0%, #0F2430 100%);">
         <div class="ui-modal" style="width:340px;">
             <h3><i class="fa-solid fa-lock"></i> Acceso Restringido</h3>
             <p>Mariscos Matty · Sistema POS<br>Ingresa la contraseña para continuar.</p>
             <div class="form-group" style="text-align:left; margin-top:18px;">
-                <input type="password" id="login-password-input" class="ticket-pago input" placeholder="Contraseña de acceso" autocomplete="off">
+                <input type="password" id="login-password-input" placeholder="Contraseña de acceso" autocomplete="off" style="width:100%;padding:10px;border-radius:6px;border:1px solid var(--border);font-size:14px;">
             </div>
-            <p id="login-error-msg" style="display:none; color:var(--coral); font-weight:700; margin-top:8px;">Contraseña incorrecta. Intenta de nuevo.</p>
+            <p id="login-error-msg" style="display:none; color:var(--danger); font-weight:700; margin-top:8px;">Contraseña incorrecta.</p>
             <div class="ui-modal-botones">
                 <button class="btn btn-gold" id="btn-login-entrar" style="width:100%;"><i class="fa-solid fa-right-to-bracket"></i> Entrar</button>
             </div>
         </div>
     </div>
 
+    <!-- TOP BAR -->
     <div class="top-bar">
         <div class="marca">
             <h1>Mariscos <span>Matty</span></h1>
-            <span class="etiqueta-pos">Sistema De Ventas </span>
-            <span class="etiqueta-pos">By:Anuhar Bladimir</span>
+            <span class="etiqueta-pos">Sistema POS</span>
         </div>
         <div class="top-bar-derecha">
             <div class="reloj" id="reloj"></div>
@@ -35,60 +36,62 @@
         </div>
     </div>
 
+    <!-- TABS -->
     <div class="tabs-navegacion">
-        <button class="tab-nav activo" id="tab-mesas"><i class="fa-solid fa-chair"></i> Comedor (Mesas)</button>
-        <button class="tab-nav" id="tab-virtuales"><i class="fa-solid fa-bag-shopping"></i> Para Llevar / Domicilio</button>
-        <button class="tab-nav" id="tab-cocina"><i class="fa-solid fa-kitchen-set"></i> Pantalla de Cocina <span class="badge-comandas" id="badge-cocina-count">0</span></button>
+        <button class="tab-nav activo" id="tab-mesas"><i class="fa-solid fa-chair"></i> Comedor</button>
+        <button class="tab-nav" id="tab-virtuales"><i class="fa-solid fa-bag-shopping"></i> Para Llevar</button>
+        <button class="tab-nav" id="tab-cocina"><i class="fa-solid fa-kitchen-set"></i> Cocina <span class="badge-comandas" id="badge-cocina-count">0</span></button>
     </div>
 
     <div class="contenedor">
 
+        <!-- SECCION MESAS -->
         <div id="seccion-mesas" class="seccion-pos">
             <div class="mapa-encabezado">
                 <h2>Mesas en Salón</h2>
                 <div class="leyenda">
                     <span class="leyenda-item"><span class="punto punto-libre"></span>Libre</span>
                     <span class="leyenda-item"><span class="punto punto-ocupada"></span>Ocupada</span>
-                    <span class="leyenda-item"><span class="punto punto-cuenta"></span>Cuenta pedida</span>
+                    <span class="leyenda-item"><span class="punto punto-cuenta"></span>Cuenta</span>
                 </div>
             </div>
             <div class="grid-mesas" id="grid-mesas"></div>
         </div>
 
+        <!-- SECCION VIRTUALES -->
         <div id="seccion-virtuales" class="seccion-pos" style="display: none;">
             <div class="mapa-encabezado">
                 <h2>Pedidos Fuera de Salón</h2>
-                <button class="btn btn-gold" id="btn-nuevo-pedido-v"><i class="fa-solid fa-plus"></i> Nuevo Pedido Especial</button>
+                <button class="btn btn-gold" id="btn-nuevo-pedido-v"><i class="fa-solid fa-plus"></i> Nuevo Pedido</button>
             </div>
             <div class="grid-mesas" id="grid-virtuales"></div>
         </div>
 
+        <!-- SECCION COCINA -->
         <div id="seccion-cocina" class="seccion-pos" style="display: none;">
             <div class="mapa-encabezado">
                 <h2>Comandas en Preparación</h2>
-                <p class="admin-desc">Monitoreo de producción para chefs y barra en tiempo real.</p>
             </div>
             <div class="grid-cocina" id="grid-comandas-cocina"></div>
         </div>
 
+        <!-- VISTA MESA / PEDIDO -->
         <div id="vista-mesa" class="vista-mesa">
             <div class="mesa-top">
                 <button class="btn btn-outline" id="btn-volver"><i class="fa-solid fa-arrow-left"></i> Volver</button>
                 <h2 id="titulo-mesa">Mesa</h2>
-                <button class="btn btn-coral" id="btn-cancelar-mesa"><i class="fa-solid fa-rotate-left"></i> Cancelar Pedido</button>
+                <button class="btn btn-coral" id="btn-cancelar-mesa"><i class="fa-solid fa-rotate-left"></i> Cancelar</button>
             </div>
-
             <div class="orden-layout">
                 <div>
                     <div class="categorias" id="categorias"></div>
                     <div class="buscador-contenedor">
                         <i class="fa-solid fa-magnifying-glass"></i>
-                        <input type="text" id="buscar-platillo" placeholder="Buscar platillo por nombre...">
+                        <input type="text" id="buscar-platillo" placeholder="Buscar platillo...">
                     </div>
                     <div class="lista-platillos" id="lista-platillos"></div>
                 </div>
-
-                <div class="panel-orden">
+                <div class="panel-orden" id="panel-orden">
                     <div class="panel-orden-header">
                         <h3>Orden Actual</h3>
                         <span id="badge-cliente-info" class="badge-cliente"></span>
@@ -99,57 +102,70 @@
                         <span id="orden-total-valor">$0</span>
                     </div>
                     <div class="panel-acciones">
-                        <button class="btn btn-outline" id="btn-enviar-cocina" style="border-color: var(--teal); color: var(--teal);"><i class="fa-solid fa-fire-burner"></i> Enviar Comanda a Cocina</button>
-                        <button class="btn btn-ghost" id="btn-abrir-division" style="color: var(--amber);"><i class="fa-solid fa-arrows-split-up-and-left"></i> Dividir Cuenta (Cuentas Separadas)</button>
-                        <button class="btn btn-gold" id="btn-cobrar"><i class="fa-solid fa-receipt"></i> Cobrar Cuenta Completa</button>
+                        <button class="btn btn-success" id="btn-enviar-cocina"><i class="fa-solid fa-fire-burner"></i> Enviar a Cocina</button>
+                        <button class="btn btn-ghost" id="btn-abrir-division" style="color:var(--warning);"><i class="fa-solid fa-arrows-split-up-and-left"></i> Dividir Cuenta</button>
+                        <button class="btn btn-gold" id="btn-cobrar"><i class="fa-solid fa-receipt"></i> Cobrar Cuenta</button>
                     </div>
                 </div>
             </div>
         </div>
 
+        <!-- PANEL ADMIN -->
         <div id="vista-admin" class="vista-admin" style="display: none;">
             <div class="mesa-top">
                 <button class="btn btn-outline" id="btn-volver-admin"><i class="fa-solid fa-arrow-left"></i> Volver al POS</button>
-                <h2>Panel de Administración</h2>
-                <button class="btn btn-coral" id="btn-borrar-ventas"><i class="fa-solid fa-trash-can"></i> Reset Ventas y Gastos</button>
+                <h2>Panel Administración</h2>
+                <button class="btn btn-coral" id="btn-borrar-ventas"><i class="fa-solid fa-trash-can"></i> Reset Datos</button>
             </div>
 
             <div class="admin-layout">
+
+                <!-- COL IZQUIERDA -->
                 <div class="admin-col-izq">
+                    <!-- MESAS -->
                     <div class="admin-card">
-                        <h3><i class="fa-solid fa-chair"></i> Control de Mesas (Salón)</h3>
+                        <h3><i class="fa-solid fa-chair"></i> Control de Mesas</h3>
                         <div class="admin-acciones-mesas">
-                            <button class="btn" id="btn-agregar-mesa"><i class="fa-solid fa-plus"></i> Agregar 1 Mesa</button>
-                            <button class="btn btn-coral" id="btn-eliminar-mesa"><i class="fa-solid fa-minus"></i> Eliminar Última Mesa</button>
+                            <button class="btn" id="btn-agregar-mesa"><i class="fa-solid fa-plus"></i> +1 Mesa</button>
+                            <button class="btn btn-coral" id="btn-eliminar-mesa"><i class="fa-solid fa-minus"></i> -1 Mesa</button>
                         </div>
-                        <div class="total-mesas-badge">Total actual: <strong id="admin-total-mesas">0</strong> mesas</div>
+                        <div class="total-mesas-badge">Total: <strong id="admin-total-mesas">0</strong> mesas</div>
                     </div>
 
-                    <div class="admin-card" style="margin-top: 24px;">
-                        <h3><i class="fa-solid fa-wallet"></i> Gastos Extras del Día</h3>
-                        <form id="form-nuevo-gasto" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;">
-                            <input type="text" id="gasto-concepto" placeholder="Concepto (ej. Compra limones)" required style="padding: 8px; border: 1px solid var(--sand-dark); border-radius: 4px; font-size: 13px;">
-                            <input type="number" id="gasto-monto" placeholder="Monto ($)" min="1" required style="padding: 8px; border: 1px solid var(--sand-dark); border-radius: 4px; font-size: 13px;">
-                            <button type="submit" class="btn btn-sm" style="background: var(--ink); color: var(--white);"><i class="fa-solid fa-plus"></i> Registrar Gasto</button>
+                    <!-- TURNOS -->
+                    <div class="admin-card" style="margin-top:20px;">
+                        <h3><i class="fa-solid fa-clock"></i> Turno / Caja</h3>
+                        <div id="turno-info"></div>
+                        <button class="btn btn-gold" id="btn-abrir-turno" style="width:100%;margin-top:8px;"><i class="fa-solid fa-play"></i> Abrir Turno</button>
+                    </div>
+
+                    <!-- GASTOS -->
+                    <div class="admin-card" style="margin-top:20px;">
+                        <h3><i class="fa-solid fa-wallet"></i> Gastos del Turno</h3>
+                        <form id="form-nuevo-gasto" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
+                            <input type="text" id="gasto-concepto" placeholder="Concepto" required style="padding:7px;border:1px solid var(--border);border-radius:4px;font-size:12px;">
+                            <input type="number" id="gasto-monto" placeholder="Monto $" min="1" required style="padding:7px;border:1px solid var(--border);border-radius:4px;font-size:12px;">
+                            <button type="submit" class="btn btn-sm" style="background:var(--primary);color:var(--white);"><i class="fa-solid fa-plus"></i> Registrar</button>
                         </form>
-                        <div id="admin-lista-gastos" style="max-height: 120px; overflow-y: auto; font-size: 12px; display: flex; flex-direction: column; gap: 4px;"></div>
+                        <div id="admin-lista-gastos" style="max-height:100px;overflow-y:auto;font-size:11px;display:flex;flex-direction:column;gap:3px;"></div>
                     </div>
 
-                    <div class="admin-card" style="margin-top: 24px;">
+                    <!-- REPORTE CAJA -->
+                    <div class="admin-card" style="margin-top:20px;">
                         <h3><i class="fa-solid fa-chart-pie"></i> Reporte de Caja</h3>
                         <div class="reporte-totales">
-                            <div class="total-metodo">💵 Efectivo Bruto: <strong id="rep-efectivo">$0</strong></div>
+                            <div class="total-metodo">💵 Efectivo: <strong id="rep-efectivo">$0</strong></div>
                             <div class="total-metodo">💳 Tarjeta: <strong id="rep-tarjeta">$0</strong></div>
-                            <div class="total-metodo" style="color: var(--coral); border-top: 1px solid var(--sand-dark); padding-top:4px;">📉 Gastos Totales: <strong id="rep-total-gastos">-$0</strong></div>
-                            <div class="total-metodo" style="border-top: 2px solid var(--navy); padding-top:8px; font-size:16px; color: var(--navy);">
-                                💰 Balance Neto: <strong id="rep-total-ventas">$0</strong>
-                            </div>
-                            <div class="total-metodo" style="color: var(--teal); font-size: 13px;">❤️ Propinas Acum.: <strong id="rep-total-propinas">$0</strong></div>
+                            <div class="total-metodo">📱 Transferencia: <strong id="rep-transferencia">$0</strong></div>
+                            <div class="total-metodo" style="color:var(--danger);border-top:1px solid var(--border);padding-top:4px;">📉 Gastos: <strong id="rep-total-gastos">-$0</strong></div>
+                            <div class="total-metodo" style="border-top:2px solid var(--primary);padding-top:6px;font-size:14px;color:var(--primary);"><strong>💰 Balance: <span id="rep-total-ventas">$0</span></strong></div>
+                            <div class="total-metodo" style="color:var(--success);font-size:12px;">❤️ Propinas: <strong id="rep-total-propinas">$0</strong></div>
                         </div>
-                        <button class="btn btn-gold" id="btn-imprimir-corte" style="width: 100%; margin-top: 15px; padding: 10px;"><i class="fa-solid fa-print"></i> Imprimir Corte de Caja</button>
+                        <button class="btn btn-gold" id="btn-imprimir-corte" style="width:100%;margin-top:10px;padding:8px;"><i class="fa-solid fa-print"></i> Corte de Caja</button>
                     </div>
                 </div>
 
+                <!-- COL DERECHA - MENU -->
                 <div class="admin-card">
                     <h3><i class="fa-solid fa-utensils"></i> Gestión del Menú</h3>
                     <form id="form-nuevo-platillo" class="form-admin">
@@ -157,7 +173,10 @@
                         <h4 id="form-admin-titulo">Añadir Platillo</h4>
                         <div class="form-group">
                             <label>Categoría</label>
-                            <select id="admin-platillo-cat" required></select>
+                            <div style="display:flex;gap:6px;">
+                                <select id="admin-platillo-cat" required style="flex:1;"></select>
+                                <button type="button" class="btn btn-sm" id="btn-nueva-categoria" title="Nueva categoría"><i class="fa-solid fa-plus"></i></button>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label>Nombre del Platillo</label>
@@ -167,60 +186,43 @@
                             <label>Precio ($)</label>
                             <input type="number" id="admin-platillo-precio" min="1" required>
                         </div>
-                        <div style="display:flex; gap:10px;">
-                            <button type="submit" class="btn btn-gold" style="flex:1; justify-content:center;"><i class="fa-solid fa-floppy-disk"></i> Guardar</button>
+                        <div style="display:flex;gap:8px;">
+                            <button type="submit" class="btn btn-gold" style="flex:1;justify-content:center;"><i class="fa-solid fa-floppy-disk"></i> Guardar</button>
                             <button type="button" class="btn btn-ghost" id="btn-cancelar-edicion" style="display:none;">Cancelar</button>
                         </div>
                     </form>
 
-                    <hr style="border:1px dashed var(--sand-dark); margin:20px 0;">
+                    <hr style="border:1px dashed var(--border);margin:16px 0;">
 
                     <h4>Platillos Registrados</h4>
                     <div class="admin-lista-categorias" id="admin-lista-categorias-btns"></div>
                     <div class="admin-tabla-productos">
                         <table>
-                            <thead>
-                                <tr>
-                                    <th>Producto</th>
-                                    <th>Precio</th>
-                                    <th>Acciones</th>
-                                </tr>
-                            </thead>
+                            <thead><tr><th>Producto</th><th>Precio</th><th>Acción</th></tr></thead>
                             <tbody id="cuerpo-tabla-admin"></tbody>
                         </table>
                     </div>
                 </div>
+
             </div>
         </div>
 
     </div>
 
+    <!-- MODAL TICKET COBRO -->
     <div class="overlay" id="overlay-ticket">
-        <div class="ticket">
+        <div class="ticket" id="ticket-cobro-contenido">
             <button class="cerrar-modal" id="cerrar-ticket"><i class="fa-solid fa-xmark"></i></button>
             <div class="ticket-header">
-                <h3>MARISCOS MATTY</h3>
+                <h3>🐟 MARISCOS MATTY</h3>
                 <p>¡Sabor fresco de la costa!</p>
-                <p id="ticket-fecha"></p>
                 <p id="ticket-mesa-info"></p>
-                <p> Este es un ticket de venta no cuenta como factura</p>
             </div>
-            
             <div id="ticket-lineas"></div>
-            
             <div class="ticket-calculos">
-                <div class="ticket-subtotal-linea">
-                    <span>Subtotal Consumo</span>
-                    <span id="ticket-subtotal-valor">$0</span>
-                </div>
-                
-                <div class="ticket-subtotal-linea" style="color: var(--teal); font-weight: 600;">
-                    <span>Propina dejada</span>
-                    <span id="ticket-propina-dinero">$0 (10%)</span>
-                </div>
-
-                <div class="ticket-pago">
-                    <label>Propina Sugerida</label>
+                <div class="ticket-subtotal-linea"><span>Subtotal</span><span id="ticket-subtotal-valor">$0</span></div>
+                <div class="ticket-subtotal-linea" style="color:var(--success);font-weight:600;"><span>Propina</span><span id="ticket-propina-dinero">$0 (10%)</span></div>
+                <div class="ticket-pago"><label>Propina</label>
                     <div class="propina-selector">
                         <button class="btn-propina" data-pct="0">0%</button>
                         <button class="btn-propina" data-pct="10">10%</button>
@@ -228,22 +230,10 @@
                         <button class="btn-propina" data-pct="20">20%</button>
                     </div>
                 </div>
-                
-                <div class="ticket-total"><span>TOTAL A PAGAR</span><span id="ticket-total-valor">$0</span></div>
-
-                <hr style="border: 1px dashed var(--sand-dark); margin: 12px 0;">
-
+                <div class="ticket-total"><span>TOTAL</span><span id="ticket-total-valor">$0</span></div>
+                <hr style="border:1px dashed var(--border);margin:10px 0;">
                 <div class="ticket-pago">
-                    <label>Método de pago</label>
-                    <select id="metodo-pago">
-                        <option value="Efectivo">💵 Efectivo</option>
-                        <option value="Tarjeta">💳 Tarjeta</option>
-
-                    </select>
-                </div>
-
-                <div class="ticket-pago" id="bloque-efectivo">
-                    <label>¿Con cuánto paga el cliente?</label>
+                    <label>💵 Efectivo recibido</label>
                     <input type="number" id="pago-recibido" readonly>
                     <div class="teclado-grid">
                         <button class="btn-tecla" data-val="1">1</button><button class="btn-tecla" data-val="2">2</button><button class="btn-tecla" data-val="3">3</button>
@@ -251,76 +241,65 @@
                         <button class="btn-tecla" data-val="7">7</button><button class="btn-tecla" data-val="8">8</button><button class="btn-tecla" data-val="9">9</button>
                         <button class="btn-tecla btn-tecla-accion" data-val="C">C</button><button class="btn-tecla" data-val="0">0</button><button class="btn-tecla btn-tecla-accion" data-val="del"><i class="fa-solid fa-backspace"></i></button>
                     </div>
-                    <div class="cambio-resultado" id="bloque-cambio" style="display:none;"><span>Su cambio:</span><strong id="ticket-cambio-valor">$0</strong></div>
+                    <div class="cambio-resultado" id="bloque-cambio" style="display:none;"><span>Cambio:</span><strong id="ticket-cambio-valor">$0</strong></div>
                 </div>
             </div>
             <div class="ticket-acciones">
-                <button class="btn btn-gold" id="btn-confirmar-cobro"><i class="fa-solid fa-circle-check"></i> Finalizar y Cerrar Cuenta</button>
                 <button class="btn btn-ghost" id="btn-imprimir"><i class="fa-solid fa-print"></i> Imprimir Ticket</button>
+                <button class="btn btn-gold" id="btn-confirmar-cobro"><i class="fa-solid fa-circle-check"></i> Finalizar y Cerrar</button>
             </div>
         </div>
     </div>
 
-    <div id="ticket-corte-imprimible" class="ticket" style="display: none;"></div>
-
+    <!-- DIVISION CUENTAS -->
     <div class="overlay" id="overlay-dividir">
-        <div class="ticket" style="max-width: 500px;">
+        <div class="ticket" style="max-width:500px;">
             <button class="cerrar-modal" id="cerrar-dividir"><i class="fa-solid fa-xmark"></i></button>
-            <div class="ticket-header">
-                <h3>Dividir Cuenta</h3>
-                <p>Selecciona los productos que pagará este cliente de forma individual.</p>
-            </div>
+            <div class="ticket-header"><h3>Dividir Cuenta</h3><p>Selecciona productos para cuenta separada.</p></div>
             <div class="division-layout">
-                <div class="division-col">
-                    <h4>Productos en la Mesa</h4>
-                    <div id="division-lista-mesa" class="lista-division-scroll"></div>
-                </div>
-                <div class="division-col" style="background: var(--sand); padding: 10px; border-radius: 8px;">
-                    <h4>Cuenta Separada a Cobrar</h4>
-                    <div id="division-lista-cliente" class="lista-division-scroll"></div>
-                    <div class="total-division-box">Total Separado: <strong id="total-separado-valor">$0</strong></div>
-                </div>
+                <div class="division-col"><h4>Productos en Mesa</h4><div id="division-lista-mesa" class="lista-division-scroll"></div></div>
+                <div class="division-col" style="background:var(--bg);padding:10px;border-radius:8px;"><h4>Cuenta a Cobrar</h4><div id="division-lista-cliente" class="lista-division-scroll"></div><div class="total-division-box">Total: <strong id="total-separado-valor">$0</strong></div></div>
             </div>
-            <div class="ticket-acciones" style="margin-top: 15px;">
-                <button class="btn btn-gold" id="btn-cobrar-separado"><i class="fa-solid fa-cash-register"></i> Proceder a Cobrar Fracción</button>
-            </div>
+            <div class="ticket-acciones" style="margin-top:12px;"><button class="btn btn-gold" id="btn-cobrar-separado"><i class="fa-solid fa-cash-register"></i> Cobrar Fracción</button></div>
         </div>
     </div>
 
+    <!-- MODAL NUEVO PEDIDO VIRTUAL -->
     <div class="overlay" id="overlay-nuevo-virtual">
-        <div class="ui-modal" style="max-width: 400px;">
-            <h3>Nuevo Pedido Especial</h3>
-            <div class="form-group" style="text-align: left; margin-top: 15px;">
-                <label>Tipo de Servicio</label>
+        <div class="ui-modal" style="max-width:380px;">
+            <h3>Nuevo Pedido</h3>
+            <div class="form-group" style="text-align:left;margin-top:12px;">
+                <label>Tipo</label>
                 <select id="v-tipo-servicio">
                     <option value="Llevar">🥡 Para Llevar</option>
-                    <option value="Domicilio">🏍️ Servicio a Domicilio</option>
+                    <option value="Domicilio">🏍️ Domicilio</option>
                 </select>
             </div>
-            <div class="form-group" style="text-align: left;">
-                <label>Nombre del Cliente / Ref</label>
-                <input type="text" id="v-cliente-nombre" placeholder="Ej: Juan Pérez">
+            <div class="form-group" style="text-align:left;">
+                <label>Cliente</label>
+                <input type="text" id="v-cliente-nombre" placeholder="Nombre del cliente">
             </div>
             <div class="ui-modal-botones">
                 <button class="btn btn-ghost" id="btn-cancelar-v">Cancelar</button>
-                <button class="btn btn-gold" id="btn-aceptar-v">Abrir Pedido</button>
+                <button class="btn btn-gold" id="btn-aceptar-v">Abrir</button>
             </div>
         </div>
     </div>
 
+    <!-- MODAL UI -->
     <div class="overlay" id="overlay-ui">
         <div class="ui-modal">
             <h3 id="ui-modal-titulo">Confirmación</h3>
             <p id="ui-modal-mensaje">¿Estás seguro?</p>
-            <div id="ui-modal-input-container" style="display:none; margin: 15px 0 5px 0;">
-                <input type="password" id="ui-modal-input" class="ticket-pago input">
-            </div>
+            <div id="ui-modal-input-container" style="display:none;margin:12px 0 5px 0;"><input type="password" id="ui-modal-input" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);font-size:14px;"></div>
             <div class="ui-modal-botones">
                 <button class="btn btn-ghost" id="btn-ui-cancelar">Cancelar</button>
                 <button class="btn" id="btn-ui-aceptar">Aceptar</button>
             </div>
         </div>
     </div>
+
+    <div id="ticket-corte-imprimible" class="ticket" style="display:none;"></div>
 
     <script src="app.js"></script>
 </body>
