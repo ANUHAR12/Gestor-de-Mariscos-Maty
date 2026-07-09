@@ -178,7 +178,18 @@ db.exec(`
     FOREIGN KEY (insumo_id) REFERENCES insumos(id)
   );
 `);
-
+// ─────────────────────────────────────────────────────
+//  CREAR ADMINISTRADOR AUTOMÁTICO EN LA NUBE
+// ─────────────────────────────────────────────────────
+const verificarAdmin = db.prepare("SELECT COUNT(*) as cuenta FROM usuarios").get();
+if (verificarAdmin.cuenta === 0) {
+  // Aquí insertamos el usuario Administrador inicial con el PIN '1234'
+  db.prepare(`
+    INSERT INTO usuarios (nombre, rol, pin, activo) 
+    VALUES ('Administrador', 'Administrador', '1234', 1)
+  `).run();
+  console.log("▲ [Base de Datos] Usuario Administrador por defecto creado (PIN: 1234)");
+}
 // ─────────────────────────────────────────────────────
 //  DATOS INICIALES
 // ─────────────────────────────────────────────────────
