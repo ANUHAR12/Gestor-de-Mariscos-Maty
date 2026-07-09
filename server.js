@@ -81,7 +81,23 @@ db.exec(`
     FOREIGN KEY (turno_id) REFERENCES turnos(id),
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
   );
+
+  CREATE TABLE IF NOT EXISTS estado_app (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    mesas TEXT DEFAULT '[]',
+    virtuales TEXT DEFAULT '[]',
+    comandas TEXT DEFAULT '[]',
+    menu TEXT DEFAULT '{}'
+  );
 `);
+
+// ─────────────────────────────────────────────────────
+//  ASEGURAR FILA ÚNICA DE ESTADO (mesas/virtuales/comandas/menu) (REPARADO)
+// ─────────────────────────────────────────────────────
+const filaEstado = db.prepare('SELECT COUNT(*) as cuenta FROM estado_app').get();
+if (filaEstado.cuenta === 0) {
+  db.prepare(`INSERT INTO estado_app (id, mesas, virtuales, comandas, menu) VALUES (1, '[]', '[]', '[]', '{}')`).run();
+}
 
 // ─────────────────────────────────────────────────────
 //  AUTOGENERAR ADMINISTRADOR SI LA BD ESTÁ VACÍA (AÑADIDO)
@@ -131,20 +147,36 @@ app.get('/api/estado', (req, res) => {
     gastos = db.prepare('SELECT * FROM retiros_caja WHERE turno_id = ?').all(turnoActivo.id);
   }
   const usuarios = db.prepare('SELECT id, nombre, rol FROM usuarios WHERE activo = 1').all();
-  
+
+  const estado = db.prepare('SELECT mesas, virtuales, comandas, menu FROM estado_app WHERE id = 1').get();
+  let mesas = [], virtuales = [], comandas = [], menu = {};
+  if (estado) {
+    try { mesas = JSON.parse(estado.mesas || '[]'); } catch (e) { mesas = []; }
+    try { virtuales = JSON.parse(estado.virtuales || '[]'); } catch (e) { virtuales = []; }
+    try { comandas = JSON.parse(estado.comandas || '[]'); } catch (e) { comandas = []; }
+    try { menu = JSON.parse(estado.menu || '{}'); } catch (e) { menu = {}; }
+  }
+
   res.json({
     turnoActivo: turnoActivo || null,
     ventas,
     gastos,
     usuarios,
-    mesas: [],
-    virtuales: [],
-    comandas: [],
-    menu: {}
+    mesas,
+    virtuales,
+    comandas,
+    menu
   });
 });
 
 app.post('/api/estado', (req, res) => {
+  const { mesas, virtuales, comandas, menu } = req.body;
+  db.prepare('UPDATE estado_app SET mesas = ?, virtuales = ?, comandas = ?, menu = ? WHERE id = 1').run(
+    JSON.stringify(mesas || []),
+    JSON.stringify(virtuales || []),
+    JSON.stringify(comandas || []),
+    JSON.stringify(menu || {})
+  );
   res.json({ okey: true });
 });
 
