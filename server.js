@@ -178,7 +178,6 @@ db.exec(`
     FOREIGN KEY (insumo_id) REFERENCES insumos(id)
   );
 `);
-// ─────────────────────────────────────────────────────
 //  CREAR ADMINISTRADOR AUTOMÁTICO EN LA NUBE
 // ─────────────────────────────────────────────────────
 const verificarAdmin = db.prepare("SELECT COUNT(*) as cuenta FROM usuarios").get();
