@@ -1,7 +1,7 @@
 {
   "name": "pos-mariscos-matty",
   "version": "1.0.0",
-  "description": "Sistema POS Premium para Mariscos Matty",
+  "description": "Sistema de Punto de Venta para Mariscos Matty",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

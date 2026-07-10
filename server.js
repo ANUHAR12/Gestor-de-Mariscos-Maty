@@ -12,7 +12,7 @@ db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
 // ─────────────────────────────────────────────────────
-//  SCHEMA (REPARADO)
+//  ESQUEMA DE BASE DE DATOS
 // ─────────────────────────────────────────────────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS usuarios (
@@ -35,40 +35,17 @@ db.exec(`
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
   );
 
-  CREATE TABLE IF NOT EXISTS turnos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    usuario_id INTEGER NOT NULL,
-    fondo_inicial REAL DEFAULT 0,
-    fecha_apertura TEXT DEFAULT (datetime('now','localtime')),
-    fecha_cierre TEXT DEFAULT '',
-    total_efectivo_sistema REAL DEFAULT 0,
-    total_tarjeta_sistema REAL DEFAULT 0,
-    total_transferencia_sistema REAL DEFAULT 0,
-    total_efectivo_real REAL DEFAULT 0,
-    total_tarjeta_real REAL DEFAULT 0,
-    total_transferencia_real REAL DEFAULT 0,
-    total_propinas REAL DEFAULT 0,
-    total_gastos REAL DEFAULT 0,
-    total_ventas_bruto REAL DEFAULT 0,
-    diferencia REAL DEFAULT 0,
-    estado TEXT DEFAULT 'abierto' CHECK(estado IN ('abierto','cerrado')),
-    FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
-  );
-
   CREATE TABLE IF NOT EXISTS retiros_caja (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    turno_id INTEGER NOT NULL,
     usuario_id INTEGER NOT NULL,
     monto REAL NOT NULL,
     concepto TEXT NOT NULL,
     created_at TEXT DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (turno_id) REFERENCES turnos(id),
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
   );
 
   CREATE TABLE IF NOT EXISTS ventas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    turno_id INTEGER NOT NULL,
     usuario_id INTEGER NOT NULL,
     fecha TEXT DEFAULT (datetime('now','localtime')),
     mesa TEXT NOT NULL,
@@ -78,7 +55,7 @@ db.exec(`
     propina_metodo TEXT DEFAULT 'Efectivo',
     items TEXT NOT NULL,
     cancelado INTEGER DEFAULT 0,
-    FOREIGN KEY (turno_id) REFERENCES turnos(id),
+    motivo_cancelacion TEXT DEFAULT '',
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
   );
 
@@ -90,6 +67,58 @@ db.exec(`
     menu TEXT DEFAULT '{}'
   );
 `);
+
+// ─────────────────────────────────────────────────────
+//  MIGRACIÓN: bases de datos antiguas que usaban turnos.
+//  Se conservan ventas y gastos históricos quitando la
+//  dependencia de turno_id; el corte de caja ahora se
+//  calcula por rango de fechas, sin bloquear la operación.
+// ─────────────────────────────────────────────────────
+function columnaExiste(tabla, columna) {
+  return db.prepare(`PRAGMA table_info(${tabla})`).all().some(c => c.name === columna);
+}
+
+if (columnaExiste('ventas', 'turno_id')) {
+  db.exec(`
+    ALTER TABLE ventas RENAME TO ventas_legado;
+    CREATE TABLE ventas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      usuario_id INTEGER NOT NULL,
+      fecha TEXT DEFAULT (datetime('now','localtime')),
+      mesa TEXT NOT NULL,
+      subtotal REAL NOT NULL,
+      propina REAL DEFAULT 0,
+      metodo TEXT NOT NULL,
+      propina_metodo TEXT DEFAULT 'Efectivo',
+      items TEXT NOT NULL,
+      cancelado INTEGER DEFAULT 0,
+      motivo_cancelacion TEXT DEFAULT '',
+      FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+    );
+    INSERT INTO ventas (id, usuario_id, fecha, mesa, subtotal, propina, metodo, propina_metodo, items, cancelado, motivo_cancelacion)
+      SELECT id, usuario_id, fecha, mesa, subtotal, propina, metodo, propina_metodo, items, cancelado, motivo_cancelacion FROM ventas_legado;
+    DROP TABLE ventas_legado;
+  `);
+}
+
+if (columnaExiste('retiros_caja', 'turno_id')) {
+  db.exec(`
+    ALTER TABLE retiros_caja RENAME TO retiros_caja_legado;
+    CREATE TABLE retiros_caja (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      usuario_id INTEGER NOT NULL,
+      monto REAL NOT NULL,
+      concepto TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+    );
+    INSERT INTO retiros_caja (id, usuario_id, monto, concepto, created_at)
+      SELECT id, usuario_id, monto, concepto, created_at FROM retiros_caja_legado;
+    DROP TABLE retiros_caja_legado;
+  `);
+}
+
+try { db.exec("DROP TABLE IF EXISTS turnos"); } catch (e) {}
 
 // ─────────────────────────────────────────────────────
 //  ASEGURAR FILA ÚNICA DE ESTADO (mesas/virtuales/comandas/menu) (REPARADO)
@@ -139,13 +168,10 @@ app.post('/api/login', (req, res) => {
 });
 
 app.get('/api/estado', (req, res) => {
-  const turnoActivo = db.prepare('SELECT * FROM turnos WHERE estado = \'abierto\' ORDER BY id DESC LIMIT 1').get();
-  let ventas = [];
-  let gastos = [];
-  if (turnoActivo) {
-    ventas = db.prepare('SELECT * FROM ventas WHERE turno_id = ?').all(turnoActivo.id);
-    gastos = db.prepare('SELECT * FROM retiros_caja WHERE turno_id = ?').all(turnoActivo.id);
-  }
+  // Ventas y gastos del día en curso, para el resumen que se ve en el panel de administración.
+  // El corte de caja completo por rango de fechas vive en /api/reportes/corte.
+  const ventas = db.prepare("SELECT * FROM ventas WHERE date(fecha) = date('now','localtime')").all();
+  const gastos = db.prepare("SELECT * FROM retiros_caja WHERE date(created_at) = date('now','localtime')").all();
   const usuarios = db.prepare('SELECT id, nombre, rol FROM usuarios WHERE activo = 1').all();
 
   const estado = db.prepare('SELECT mesas, virtuales, comandas, menu FROM estado_app WHERE id = 1').get();
@@ -158,7 +184,6 @@ app.get('/api/estado', (req, res) => {
   }
 
   res.json({
-    turnoActivo: turnoActivo || null,
     ventas,
     gastos,
     usuarios,
@@ -180,64 +205,83 @@ app.post('/api/estado', (req, res) => {
   res.json({ okey: true });
 });
 
-// ─── ENDPOINTS DE VENTAS Y RETIROS ───
+// ─── ENDPOINTS DE VENTAS Y GASTOS ───
 app.post('/api/ventas', (req, res) => {
-  const { mesa, subtotal, propina, metodo, propina_metodo, items, mesero_id, turno_id } = req.body;
-  if (!turno_id) return res.status(400).json({ error: 'No hay turno activo para registrar la venta' });
-  
-  db.prepare(`INSERT INTO ventas (turno_id, usuario_id, mesa, subtotal, propina, metodo, propina_metodo, items) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(turno_id, mesero_id || 1, mesa, subtotal, propina || 0, metodo, propina_metodo || 'Efectivo', JSON.stringify(items));
-  
+  const { mesa, subtotal, propina, metodo, propina_metodo, items, mesero_id } = req.body;
+  if (!mesa || subtotal === undefined) return res.status(400).json({ error: 'Datos de venta incompletos' });
+
+  const info = db.prepare(`INSERT INTO ventas (usuario_id, mesa, subtotal, propina, metodo, propina_metodo, items)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(mesero_id || 1, mesa, subtotal, propina || 0, metodo, propina_metodo || 'Efectivo', JSON.stringify(items));
+
+  const venta = db.prepare('SELECT * FROM ventas WHERE id = ?').get(info.lastInsertRowid);
+  res.json({ okey: true, venta });
+});
+
+// Cancelar una venta ya registrada (con motivo) para que no se contabilice en el corte de caja
+app.post('/api/ventas/:id/cancelar', requireRol('Administrador','Cajero'), (req, res) => {
+  const { motivo } = req.body;
+  const venta = db.prepare('SELECT * FROM ventas WHERE id = ?').get(req.params.id);
+  if (!venta) return res.status(404).json({ error: 'Venta no encontrada' });
+  db.prepare("UPDATE ventas SET cancelado = 1, motivo_cancelacion = ? WHERE id = ?").run(motivo || '', req.params.id);
   res.json({ okey: true });
 });
 
 app.post('/api/retiros', (req, res) => {
-  const { turno_id, usuario_id, monto, concepto } = req.body;
-  db.prepare('INSERT INTO retiros_caja (turno_id, usuario_id, monto, concepto) VALUES (?, ?, ?, ?)').run(turno_id, usuario_id, monto, concepto);
+  const { usuario_id, monto, concepto } = req.body;
+  if (!concepto || !monto || monto <= 0) return res.status(400).json({ error: 'Concepto y monto son requeridos' });
+  const info = db.prepare('INSERT INTO retiros_caja (usuario_id, monto, concepto) VALUES (?, ?, ?)').run(usuario_id || 1, monto, concepto);
+  const gasto = db.prepare('SELECT * FROM retiros_caja WHERE id = ?').get(info.lastInsertRowid);
+  res.json({ okey: true, gasto });
+});
+
+// Eliminar un gasto/retiro (antes solo se borraba en el navegador y "resucitaba" al refrescar)
+app.delete('/api/retiros/:id', (req, res) => {
+  const info = db.prepare('DELETE FROM retiros_caja WHERE id = ?').run(req.params.id);
+  if (info.changes === 0) return res.status(404).json({ error: 'Gasto no encontrado' });
   res.json({ okey: true });
 });
 
-// ─── CONTROL DE TURNOS ───
-app.post('/api/turno/abrir', (req, res) => {
-  const { usuario_id, fondo_inicial } = req.body;
-  const yaAbierto = db.prepare('SELECT id FROM turnos WHERE estado = \'abierto\'').get();
-  if (yaAbierto) return res.status(400).json({ error: 'Ya existe un turno abierto actualmente' });
-  
-  db.prepare('INSERT INTO turnos (usuario_id, fondo_inicial) VALUES (?, ?)').run(usuario_id, fondo_inicial);
-  res.json({ okey: true, mensaje: 'Turno abierto correctamente' });
-});
+// ─── CORTE DE CAJA POR RANGO DE FECHAS ───
+// Ya no depende de "abrir/cerrar turno": el sistema siempre está operando y el
+// corte se genera bajo demanda para el rango de fechas que se necesite (hoy,
+// ayer, la semana, un día específico, etc.), igual que en Soft Restaurant.
+app.get('/api/reportes/corte', requireRol('Administrador', 'Cajero'), (req, res) => {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const desde = req.query.desde || hoy;
+  const hasta = req.query.hasta || hoy;
 
-app.post('/api/turno/cerrar', (req, res) => {
-  const { usuario_id, total_efectivo_real } = req.body;
-  const turno = db.prepare('SELECT * FROM turnos WHERE estado = \'abierto\' ORDER BY id DESC LIMIT 1').get();
-  if (!turno) return res.status(400).json({ error: 'No hay ningún turno abierto para cerrar' });
-  
-  const ventas = db.prepare('SELECT * FROM ventas WHERE turno_id = ? AND cancelado = 0').all(turno.id);
-  const retiros = db.prepare('SELECT COALESCE(SUM(monto),0) as total FROM retiros_caja WHERE turno_id = ?').get(turno.id);
-  
-  let efec = turno.fondo_inicial, tarj = 0, trans = 0, propinas = 0;
+  const ventas = db.prepare(
+    "SELECT * FROM ventas WHERE date(fecha) BETWEEN date(?) AND date(?) AND cancelado = 0 ORDER BY fecha ASC"
+  ).all(desde, hasta);
+  const ventasCanceladas = db.prepare(
+    "SELECT * FROM ventas WHERE date(fecha) BETWEEN date(?) AND date(?) AND cancelado = 1 ORDER BY fecha ASC"
+  ).all(desde, hasta);
+  const gastos = db.prepare(
+    "SELECT * FROM retiros_caja WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at ASC"
+  ).all(desde, hasta);
+
+  let efectivo = 0, tarjeta = 0, transferencia = 0, propinas = 0;
   for (const v of ventas) {
     propinas += v.propina || 0;
-    if (v.metodo.includes('Efectivo')) efec += v.subtotal;
-    else if (v.metodo.includes('Tarjeta')) tarj += v.subtotal;
-    else trans += v.subtotal;
+    if (v.metodo.includes('Efectivo')) efectivo += v.subtotal;
+    else if (v.metodo.includes('Tarjeta')) tarjeta += v.subtotal;
+    else transferencia += v.subtotal;
   }
-  
-  efec -= retiros.total;
-  const diferencia = total_efectivo_real - efec;
-  
-  db.prepare(`UPDATE turnos SET fecha_cierre=datetime('now','localtime'), total_efectivo_sistema=?, total_tarjeta_sistema=?, total_transferencia_sistema=?, total_efectivo_real=?, total_propinas=?, total_gastos=?, total_ventas_bruto=?, diferencia=?, estado='cerrado' WHERE id=?`)
-    .run(efec, tarj, trans, total_efectivo_real, propinas, retiros.total, efec+tarj+trans, diferencia, turno.id);
-  res.json({ okey: true, mensaje: 'Turno cerrado', diferencia });
-});
+  const totalGastos = gastos.reduce((a, g) => a + g.monto, 0);
+  const totalBruto = efectivo + tarjeta + transferencia;
+  const totalNeto = totalBruto - totalGastos;
 
-// ─── REPORTES ───
-app.get('/api/reportes/caja', requireRol('Administrador','Cajero'), (req, res) => {
-  let efec = 0, tarj = 0, trans = 0, prop = 0;
-  const ventas = db.prepare('SELECT * FROM ventas WHERE cancelado = 0').all();
-  for (const v of ventas) { prop += v.propina||0; if (v.metodo.includes('Efectivo')) efec += v.subtotal||0; else if (v.metodo.includes('Tarjeta')) tarj += v.subtotal||0; else trans += v.subtotal||0; }
-  const gastos = db.prepare('SELECT COALESCE(SUM(monto),0) as t FROM retiros_caja').get().t;
-  res.json({ efectivo: efec, tarjeta: tarj, transferencia: trans, propinas: prop, gastos, balance: efec+tarj+trans-gastos });
+  res.json({
+    okey: true,
+    rango: { desde, hasta },
+    desglose: {
+      efectivo, tarjeta, transferencia, propinas,
+      gastos: totalGastos, totalBruto, totalNeto
+    },
+    ventas,
+    ventasCanceladas,
+    gastosDetalle: gastos
+  });
 });
 
 // ─── PARA REEMPLAZAR EL setInterval DE APP.JS (REPARADO) ───

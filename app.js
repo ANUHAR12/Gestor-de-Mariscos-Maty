@@ -3,14 +3,15 @@
 // ═══════════════════════════════════════════════════════════
 
 const CURRENT_USER = { id: null, nombre: '', rol: '' };
+let AUTH_TOKEN = '';
 let MENU = {}, estadoMesas = [], pedidosVirtuales = [], comandasCocina = [];
 let historialVentas = [], listaGastos = [];
-let usuarios = [], turnoActivo = null;
+let usuarios = [];
 
 let mesaActivaIndex = null, esMesaVirtualActiva = false;
 let cuentaSeparadaActiva = [], esCobroParcialDeDivision = false;
 let categoriaActiva = '', adminCategoriaActiva = '';
-let porcentajePropina = 10, busquedaFiltro = '', ticketFueImpreso = false;
+let porcentajePropina = 10, metodoPagoActivo = 'Efectivo', busquedaFiltro = '', ticketFueImpreso = false;
 let resolverUIModal = null;
 
 const $ = id => document.getElementById(id);
@@ -27,9 +28,16 @@ async function loginUsuario(pin) {
     if (!r.ok) return null;
     const d = await r.json();
     CURRENT_USER.id = d.usuario.id; CURRENT_USER.nombre = d.usuario.nombre; CURRENT_USER.rol = d.usuario.rol;
+    AUTH_TOKEN = d.token || '';
     sessionStorage.setItem('mattyUser', JSON.stringify(CURRENT_USER));
+    sessionStorage.setItem('mattyToken', AUTH_TOKEN);
     return d.usuario;
   } catch(e) { return null; }
+}
+
+// Cabecera de autorización para endpoints protegidos (requireRol en el servidor)
+function authHeaders() {
+  return AUTH_TOKEN ? { 'Authorization': 'Bearer ' + AUTH_TOKEN } : {};
 }
 
 async function modalPrompt(titulo, mensaje, conInput = false, placeholderInput = "") {
@@ -74,6 +82,18 @@ async function cargarTodo() {
   try {
     const r = await fetch('/api/estado');
     const d = await r.json();
+
+    // 🔥 EL AJUSTE: Si el mesero tiene el teclado abierto escribiendo una nota o buscando un platillo,
+    // detenemos el rediseño para que la pantalla no le parpadee ni le borre lo que escribe.
+    if (document.activeElement && (
+        document.activeElement.tagName === 'INPUT' || 
+        document.activeElement.tagName === 'TEXTAREA'
+    )) {
+        // La computadora de la cocina como no usa teclado, ignorará esto y seguirá actualizándose sola.
+        return; 
+    }
+
+    // Aquí continúa tu código original intacto...
     estadoMesas = d.mesas||[]; pedidosVirtuales = d.virtuales||[];
     comandasCocina = d.comandas||[]; historialVentas = d.ventas||[];
     listaGastos = d.gastos||[]; 
@@ -84,22 +104,27 @@ async function cargarTodo() {
       if (!MENU[cat]) MENU[cat] = [];
     });
 
-    usuarios = d.usuarios||[]; turnoActivo = d.turnoActivo;
-    if (!categoriaActiva && Object.keys(MENU).length > 0) { categoriaActiva = Object.keys(MENU)[0]; adminCategoriaActiva = Object.keys(MENU)[0]; }
+    usuarios = d.usuarios||[];
+    if (!categoriaActiva && Object.keys(MENU).length > 0) { 
+      categoriaActiva = Object.keys(MENU)[0]; 
+      adminCategoriaActiva = Object.keys(MENU)[0]; 
+    }
+    
     redibujar();
   } catch(e) { console.error('Sync:', e); }
 }
 
 async function guardar() {
   try {
+    // Nota: ventas y gastos NO se mandan aquí; tienen sus propios endpoints
+    // (/api/ventas y /api/retiros) que son la fuente de verdad en la BD.
     await fetch('/api/estado', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ mesas:estadoMesas, virtuales:pedidosVirtuales, comandas:comandasCocina, ventas:historialVentas, gastos:listaGastos, menu:MENU }) });
+      body: JSON.stringify({ mesas:estadoMesas, virtuales:pedidosVirtuales, comandas:comandasCocina, menu:MENU }) });
   } catch(e) { console.error('Save:', e); }
 }
 
 function redibujar() {
   const b = $('badge-cocina-count'); if (b) b.textContent = comandasCocina.length;
-  renderTurnoStatusSuperior();
   try {
     if ($('vista-mesa').style.display === 'block') { renderOrden(); return; }
     if ($('vista-admin').style.display === 'block') { renderAdmin(); return; }
@@ -107,27 +132,6 @@ function redibujar() {
     if ($('seccion-virtuales')?.style.display === 'block') renderPedidosVirtuales();
     if ($('seccion-cocina')?.style.display === 'block') renderPantallaCocina();
   } catch(e) {}
-}
-
-function renderTurnoStatusSuperior() {
-  const topBar = $('top-bar-derecha');
-  if (!topBar) return;
-  let statusBadge = $('turno-status-badge');
-  if (!statusBadge) {
-    statusBadge = document.createElement('span');
-    statusBadge.id = 'turno-status-badge';
-    topBar.appendChild(statusBadge);
-  }
-  if (turnoActivo) {
-    statusBadge.className = 'rol-badge rol-administrador';
-    statusBadge.style.marginLeft = '10px';
-    statusBadge.textContent = `🟢 Turno Abierto (#${turnoActivo.id})`;
-  } else {
-    statusBadge.className = 'rol-badge rol-cajero';
-    statusBadge.style.marginLeft = '10px';
-    statusBadge.style.background = 'var(--danger)';
-    statusBadge.textContent = `🔴 SIN TURNO ACTIVO`;
-  }
 }
 
 // ─── TABS ───
@@ -166,10 +170,7 @@ function renderMapa() {
       <span class="mesa-estado">${mesa.estado === 'libre' ? 'Libre' : mesa.estado === 'ocupada' ? 'Ocupada' : '💵 Cuenta'}</span>
       ${mesa.estado === 'libre' ? '<span class="mesa-vacia">Abrir mesa</span>' : `<span class="mesa-total">${fmt(total)}</span>`}
       ${mesa.estado !== 'libre' && mesa.items.length ? `<span class="mesa-item-count">${mesa.items.reduce((a,i)=>a+i.cantidad,0)} artículos</span>` : ''}`;
-    c.onclick = async () => { 
-      if (!turnoActivo) { await modalPrompt('⚠️ Turno Cerrado', 'No puedes abrir mesas si no hay un turno de caja iniciado.'); return; }
-      esMesaVirtualActiva = false; abrirMesa(idx, `Mesa ${mesa.numero}`); 
-    };
+    c.onclick = () => { esMesaVirtualActiva = false; abrirMesa(idx, `Mesa ${mesa.numero}`); };
     grid.appendChild(c);
   });
 }
@@ -192,10 +193,9 @@ function renderPedidosVirtuales() {
   });
 }
 
-seg('btn-nuevo-pedido-v', el => el.onclick = async () => { 
-  if (!turnoActivo) return modalPrompt('⚠️ Operación Denegada', 'Por favor abre un turno en Administración para registrar comandas.');
-  seg('v-cliente-nombre', e => e.value = ''); 
-  seg('overlay-nuevo-virtual', e => { e.style.display = 'flex'; e.style.animation = 'none'; setTimeout(() => e.style.animation = 'fadeIn 0.15s ease-out', 10); }); 
+seg('btn-nuevo-pedido-v', el => el.onclick = () => {
+  seg('v-cliente-nombre', e => e.value = '');
+  seg('overlay-nuevo-virtual', e => { e.style.display = 'flex'; e.style.animation = 'none'; setTimeout(() => e.style.animation = 'fadeIn 0.15s ease-out', 10); });
 });
 seg('btn-cancelar-v', el => el.onclick = () => seg('overlay-nuevo-virtual', e => e.style.display = 'none'));
 seg('btn-aceptar-v', el => el.onclick = () => {
@@ -253,12 +253,30 @@ function renderPlatillos() {
 }
 
 function agregarItem(platillo) {
-  if(!turnoActivo) { modalPrompt('Error','Turno inactivo.'); return; }
   const orden = obtenerMesa();
   if (!orden) return;
-  const ex = orden.items.find(it => it.id === platillo.id);
-  if (ex) ex.cantidad += 1;
-  else orden.items.push({ id: platillo.id, nombre: platillo.nombre, precio: platillo.precio, Clinical_id: null, cantidad: 1, nota: '', enviado: false });
+  
+  // 🔥 EL AJUSTE: Buscar si ya existe el platillo, PERO QUE NO HAYA SIDO ENVIADO TODAVÍA
+  const ex = orden.items.find(it => it.id === platillo.id && !it.enviado);
+  
+  if (ex) {
+    // Si hay uno igual sin enviar, le suma uno libremente
+    ex.cantidad += 1;
+  } else {
+    // Si ya fue enviado, o no existe, crea un renglón NUEVO e independiente
+    // ⚠️ IMPORTANTE: Le agregamos la hora actual al ID (platillo.id + '-' + Date.now()) 
+    // para que este nuevo renglón tenga su propio ID único y no se mezcle al cambiar la cantidad.
+    orden.items.push({ 
+      id: platillo.id + '-' + Date.now(), 
+      nombre: platillo.nombre, 
+      precio: platillo.precio, 
+      Clinical_id: null, 
+      cantidad: 1, 
+      nota: '', 
+      enviado: false 
+    });
+  }
+  
   if (orden.estado === 'libre') orden.estado = 'ocupada';
   guardar(); renderMesa();
 }
@@ -267,28 +285,55 @@ async function cambiarCantidad(itemId, delta) {
   const orden = obtenerMesa();
   const item = orden.items.find(it => it.id === itemId);
   if (!item) return;
-  if (item.enviado) { const u = await soloAdmin(); if (!u) return; }
+  
+  // Si el renglón específico ya fue enviado a cocina, pide clave de administrador
+  if (item.enviado) { 
+    const u = await soloAdmin(); 
+    if (!u) return; 
+  }
+  
   item.cantidad += delta;
   if (item.cantidad <= 0) orden.items = orden.items.filter(it => it.id !== itemId);
   if (!orden.items.length && !esMesaVirtualActiva) orden.estado = 'libre';
   guardar(); renderMesa();
 }
 
-function guardarNota(itemId, texto) {
+// ─── CUADRO DE COMANDAS ENVIADAS (historial visible dentro de la mesa) ───
+function renderComandasEnviadas() {
   const orden = obtenerMesa();
-  const item = orden.items.find(it => it.id === itemId);
-  if (item) { item.nota = texto.trim(); guardar(); }
+  const caja = $('caja-comandas-enviadas');
+  const cont = $('lista-comandas-enviadas');
+  if (!caja || !cont) return;
+  const historial = (orden && orden.comandasEnviadas) || [];
+  if (!historial.length) { caja.style.display = 'none'; cont.innerHTML = ''; return; }
+  caja.style.display = 'block';
+  cont.innerHTML = historial.map(com => {
+    const hora = new Date(com.hora).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+    const itemsHtml = com.items.map(it => `<span>${it.cantidad}x ${it.nombre}${it.nota ? ' — ⚠️ ' + it.nota : ''}</span>`).join('');
+    return `<div class="comanda-enviada-linea">
+      <div class="comanda-enviada-hora">🕐 ${hora}</div>
+      <div class="comanda-enviada-items">${itemsHtml}</div>
+    </div>`;
+  }).join('');
 }
 
 function renderOrden() {
   const orden = obtenerMesa();
+  renderComandasEnviadas();
   const cont = $('orden-lista'); if (!cont) return; cont.innerHTML = '';
+
+  // 🔥 Los platillos ya enviados a cocina se dejan de mostrar aquí (ahora viven en el
+  // cuadro "Comandas enviadas" de arriba); en este panel solo se ven los nuevos, para
+  // no confundir con el candado 🔒 pensando que hay que volver a enviarlos.
+  const itemsPendientes = (orden ? orden.items : []).filter(it => !it.enviado);
+
   if (!orden || !orden.items.length) cont.innerHTML = '<p class="orden-vacia">🛒 Aún no hay productos.</p>';
+  else if (!itemsPendientes.length) cont.innerHTML = '<p class="orden-vacia">✅ Ya enviado a cocina. Agrega más productos si hace falta.</p>';
   else {
-    orden.items.forEach(it => {
+    itemsPendientes.forEach(it => {
       const row = document.createElement('div'); row.className = 'orden-item';
       row.innerHTML = `<div style="flex:1;min-width:0">
-          <div class="nombre">${it.nombre} ${it.enviado ? '🔒' : ''}</div>
+          <div class="nombre">${it.nombre}</div>
           <div class="subtotal">${fmt(it.precio * it.cantidad)}</div>
           <div class="nota-cocina-box"><input type="text" class="input-nota" placeholder="✍️ Nota..." value="${it.nota||''}"></div>
         </div>
@@ -301,10 +346,11 @@ function renderOrden() {
       cont.appendChild(row);
     });
   }
+  // El total sigue sumando TODOS los productos de la mesa (enviados y nuevos), no solo los visibles.
   seg('orden-total-valor', e => e.textContent = fmt(sub(orden ? orden.items : [])));
 }
-function renderMesa() { renderCategorias(); renderPlatillos(); renderOrden(); }
 
+function renderMesa() { renderCategorias(); renderPlatillos(); renderOrden(); }
 // ─── CANCELAR ───
 async function cancelarMesa() {
   const orden = obtenerMesa();
@@ -314,7 +360,7 @@ async function cancelarMesa() {
   const u = await soloAdmin();
   if (!u) return;
   if (esMesaVirtualActiva) pedidosVirtuales.splice(mesaActivaIndex,1);
-  else { orden.items = []; orden.estado = 'libre'; }
+  else { orden.items = []; orden.estado = 'libre'; orden.comandasEnviadas = []; }
   guardar(); regresar();
 }
 seg('btn-cancelar-mesa', el => el.onclick = cancelarMesa);
@@ -323,12 +369,28 @@ seg('btn-cancelar-mesa', el => el.onclick = cancelarMesa);
 seg('btn-enviar-cocina', el => el.onclick = async () => {
   const orden = obtenerMesa();
   if (!orden || !orden.items.length) return modalPrompt('Aviso','No hay platillos para enviar.');
+  // Antes se reenviaban TODOS los items (incluso los ya enviados) cada vez que se
+  // presionaba el botón, duplicando el pedido completo en cocina. Ahora sólo se manda
+  // lo nuevo, y si la mesa ya tenía una comanda previa, se marca como "AGREGADO".
+  const itemsNuevos = orden.items.filter(it => !it.enviado);
+  if (!itemsNuevos.length) return modalPrompt('Aviso','No hay platillos nuevos para enviar a cocina.');
+  const esAgregado = orden.items.some(it => it.enviado);
   const origen = esMesaVirtualActiva ? `${orden.tipo} (${(orden.cliente||'').substring(0,8)})` : `Mesa ${orden.numero}`;
-  comandasCocina.push({ id: Date.now().toString(), origen, horaEntrada: new Date().toISOString(), estado:'activa',
-    items: orden.items.map(it => ({ nombre: it.nombre, cantidad: it.cantidad, nota: it.nota||'', estado:'pendiente' })) });
-  orden.items.forEach(it => { it.enviado = true; });
+  const horaEnvio = new Date().toISOString();
+  comandasCocina.push({ id: Date.now().toString(), origen, esAgregado, horaEntrada: horaEnvio, estado:'activa',
+    items: itemsNuevos.map(it => ({ nombre: it.nombre, cantidad: it.cantidad, nota: it.nota||'', estado:'pendiente' })) });
+
+  // 📋 Registro visible en el cuadro "Comandas enviadas" de la mesa: qué se pidió y a qué hora,
+  // para que al reabrir la mesa se pueda ver el historial de lo que ya se mandó a cocina.
+  if (!orden.comandasEnviadas) orden.comandasEnviadas = [];
+  orden.comandasEnviadas.push({
+    hora: horaEnvio,
+    items: itemsNuevos.map(it => ({ nombre: it.nombre, cantidad: it.cantidad, nota: it.nota||'' }))
+  });
+
+  itemsNuevos.forEach(it => { it.enviado = true; });
   guardar(); renderOrden();
-  modalPrompt('✅ Éxito','Comanda enviada a la cocina.');
+  modalPrompt('✅ Éxito', esAgregado ? '🔺 Agregado enviado a la cocina.' : 'Comanda enviada a la cocina.');
 });
 
 // ─── PANTALLA COCINA ───
@@ -339,7 +401,8 @@ function renderPantallaCocina() {
     const min = Math.floor((new Date() - new Date(com.horaEntrada)) / 60000);
     const card = document.createElement('div');
     card.className = 'comanda-card ' + (min >= 15 ? 'critica' : 'lista');
-    card.innerHTML = `<div class="comanda-header"><span class="comanda-origen">${com.origen}</span><span class="comanda-tiempo">⏱️ ${min} min</span></div>
+    if (com.esAgregado) card.style.borderLeftColor = 'var(--warning)';
+    card.innerHTML = `<div class="comanda-header"><span class="comanda-origen">${com.origen} ${com.esAgregado ? '<span class="agotado-badge" style="background:var(--warning);">🔺 AGREGADO</span>' : ''}</span><span class="comanda-tiempo">⏱️ ${min} min</span></div>
       <div class="comanda-cuerpo">${com.items.map(it => `<div class="comanda-item-row"><span class="comanda-item-nombre">${it.cantidad}x ${it.nombre}</span><span class="comanda-item-status">${it.estado==='pendiente'?'⏳':'✅'}</span>${it.nota ? `<div class="comanda-item-nota">⚠️ ${it.nota}</div>`:''}</div>`).join('')}</div>
       <div class="comanda-footer"><button class="btn btn-gold btn-completar-chef">✅ Despachar</button></div>`;
     card.querySelector('.btn-completar-chef').onclick = () => { comandasCocina.splice(idx,1); guardar(); renderPantallaCocina(); };
@@ -410,6 +473,7 @@ function abrirTicketPre(esParcial) {
   seg('ticket-mesa-info', e => e.textContent = `${tit} · ${new Date().toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})}`);
   seg('ticket-lineas', e => e.innerHTML = prods.map(it => `<div class="ticket-linea-producto"><div class="ticket-linea-main"><span>${it.cantidad}x ${it.nombre}</span><span>${fmt(it.precio*it.cantidad)}</span></div></div>`).join(''));
   porcentajePropina = 10; actualizarBotonesPropina();
+  metodoPagoActivo = 'Efectivo'; actualizarBotonesMetodo();
   seg('pago-recibido', e => e.value = ''); seg('bloque-cambio', e => e.style.display = 'none');
   ticketFueImpreso = false;
   calcularPrecios();
@@ -424,17 +488,42 @@ function calcularPrecios() {
   seg('ticket-subtotal-valor', e => e.textContent = fmt(subt));
   seg('ticket-propina-dinero', e => e.textContent = `${fmt(prop)} (${porcentajePropina}%)`);
   seg('ticket-total-valor', e => e.textContent = fmt(total));
+
+  // Cálculo del cambio a entregar (antes nunca se mostraba, aunque el bloque existía en el HTML)
+  const pago = parseFloat($('pago-recibido')?.value || 0);
+  if (metodoPagoActivo === 'Efectivo' && pago > 0) {
+    const cambio = pago - total;
+    seg('bloque-cambio', e => e.style.display = 'flex');
+    seg('ticket-cambio-valor', e => e.textContent = fmt(Math.max(cambio, 0)));
+  } else {
+    seg('bloque-cambio', e => e.style.display = 'none');
+  }
 }
 
 function actualizarBotonesPropina() {
-  document.querySelectorAll('.btn-propina').forEach(btn => {
+  document.querySelectorAll('.btn-propina:not(.btn-metodo)').forEach(btn => {
     const pct = parseInt(btn.dataset.pct);
     btn.style.background = pct === porcentajePropina ? 'var(--primary)' : 'var(--border)';
     btn.style.color = pct === porcentajePropina ? 'white' : 'var(--text)';
   });
 }
-document.querySelectorAll('.btn-propina').forEach(btn => {
+document.querySelectorAll('.btn-propina:not(.btn-metodo)').forEach(btn => {
   btn.onclick = () => { porcentajePropina = parseInt(btn.dataset.pct); actualizarBotonesPropina(); calcularPrecios(); };
+});
+
+// ─── SELECTOR DE MÉTODO DE PAGO (antes no existía: todo se registraba como "Efectivo") ───
+function actualizarBotonesMetodo() {
+  document.querySelectorAll('.btn-metodo').forEach(btn => {
+    const activo = btn.dataset.metodo === metodoPagoActivo;
+    btn.style.background = activo ? 'var(--primary)' : 'var(--border)';
+    btn.style.color = activo ? 'white' : 'var(--text)';
+  });
+  const esEfectivo = metodoPagoActivo === 'Efectivo';
+  seg('bloque-pago-efectivo', e => e.style.display = esEfectivo ? 'block' : 'none');
+  if (!esEfectivo) { seg('pago-recibido', e => e.value = ''); seg('bloque-cambio', e => e.style.display = 'none'); }
+}
+document.querySelectorAll('.btn-metodo').forEach(btn => {
+  btn.onclick = () => { metodoPagoActivo = btn.dataset.metodo; actualizarBotonesMetodo(); calcularPrecios(); };
 });
 
 async function confirmarCobro() {
@@ -443,8 +532,12 @@ async function confirmarCobro() {
   const subtotal = sub(prods);
   const propina = subtotal * (porcentajePropina / 100);
   const total = subtotal + propina;
-  const pago = parseFloat($('pago-recibido')?.value || 0);
-  if (pago < total) return modalPrompt('Error','Efectivo insuficiente.');
+  // Sólo se exige verificar suficiencia de efectivo cuando el pago es en efectivo;
+  // con Tarjeta/Transferencia no hay "cambio" que calcular.
+  if (metodoPagoActivo === 'Efectivo') {
+    const pago = parseFloat($('pago-recibido')?.value || 0);
+    if (pago < total) return modalPrompt('Error','Efectivo insuficiente.');
+  }
   if (!ticketFueImpreso) return modalPrompt('Falta Imprimir','Debes imprimir el ticket primero.');
   const user = await adminOCajero();
   if (!user) return;
@@ -455,13 +548,18 @@ function ejecutarCierreDeMesaFisico(orden, prods, subtotal, propina) {
   try {
     fetch('/api/ventas', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ fecha: new Date().toISOString(), mesa: orden ? (esMesaVirtualActiva ? orden.tipo : `Mesa ${orden.numero}`) : 'Varios',
-        subtotal, propina, propina_metodo:'Efectivo', metodo:'Efectivo',
+        subtotal, propina, propina_metodo: metodoPagoActivo, metodo: metodoPagoActivo,
         items: prods.map(it => ({ id: it.id, nombre: it.nombre, precio: it.precio, cantidad: it.cantidad })),
-        mesero_id: CURRENT_USER.id||null, turno_id: turnoActivo ? turnoActivo.id : null }) });
+        mesero_id: CURRENT_USER.id||null }) });
   } catch(e) { console.error(e); }
   
   if (esCobroParcialDeDivision) { cuentaSeparadaActiva = []; if (orden && !orden.items.length && !esMesaVirtualActiva) orden.estado = 'libre'; }
-  else { if (esMesaVirtualActiva) pedidosVirtuales.splice(mesaActivaIndex,1); else if (orden) { orden.items = []; orden.estado = 'libre'; } }
+  else {
+    // Al imprimir la cuenta y cerrar la mesa por completo, se limpia también el cuadro
+    // de "Comandas enviadas" para que la siguiente mesa/pedido empiece en blanco.
+    if (esMesaVirtualActiva) pedidosVirtuales.splice(mesaActivaIndex,1);
+    else if (orden) { orden.items = []; orden.estado = 'libre'; orden.comandasEnviadas = []; }
+  }
   guardar();
   seg('overlay-ticket', e => e.style.display = 'none');
   regresar();
@@ -518,8 +616,7 @@ seg('btn-volver-admin', el => el.onclick = () => { seg('vista-admin', e => e.sty
 
 function renderAdmin() {
   seg('admin-total-mesas', e => e.textContent = estadoMesas.length);
-  renderTurnosAdmin();
-  
+
   const sel = $('admin-platillo-cat');
   if (sel) {
     const catSeleccionadaAnterior = sel.value || adminCategoriaActiva;
@@ -545,7 +642,32 @@ function renderAdmin() {
   }
   calcularReportesAdmin();
   renderGastosAdmin();
+  renderVentasAdmin();
 }
+
+// ─── VENTAS DEL DÍA (permite cancelar una venta con motivo, como en Soft Restaurant) ───
+function renderVentasAdmin() {
+  const cont = $('admin-lista-ventas');
+  if (!cont) return;
+  if (!historialVentas.length) { cont.innerHTML = '<span style="color:var(--text-muted);font-style:italic;">Sin ventas registradas hoy.</span>'; return; }
+  cont.innerHTML = historialVentas.slice().reverse().map(v => `<div style="display:flex;justify-content:space-between;background:var(--bg);padding:4px 8px;border-radius:4px;align-items:center;${v.cancelado ? 'opacity:0.5;text-decoration:line-through;' : ''}">
+      <span>${v.mesa} · ${v.metodo}</span>
+      <span><b>${fmt(v.subtotal)}</b> ${!v.cancelado ? `<i class="fa-solid fa-ban" style="color:var(--danger);cursor:pointer;margin-left:6px;" onclick="cancelarVenta(${v.id})" title="Cancelar venta"></i>` : ''}</span>
+    </div>`).join('');
+}
+
+window.cancelarVenta = async (ventaId) => {
+  const u = await soloAdmin();
+  if (!u) return;
+  const motivo = await modalPrompt('⚠️ Cancelar Venta', 'Escribe el motivo de la cancelación:', true, 'Ej: Cliente inconforme');
+  if (motivo === false) return;
+  try {
+    const r = await fetch(`/api/ventas/${ventaId}/cancelar`, { method:'POST', headers: { 'Content-Type':'application/json', ...authHeaders() }, body: JSON.stringify({ motivo }) });
+    if (!r.ok) { const d = await r.json().catch(()=>({})); return modalPrompt('Error', d.error || 'No se pudo cancelar la venta.'); }
+    await cargarTodo();
+    renderAdmin();
+  } catch(e) { modalPrompt('Error', 'Error de red al cancelar la venta.'); }
+};
 
 window.editarP = (id, cat) => {
   const p = MENU[cat]?.find(x => x.id === id);
@@ -605,89 +727,79 @@ seg('btn-nueva-categoria', el => el.onclick = async () => {
   renderAdmin(); 
 });
 
-// ─── TURNOS MEJORADOS (NATIVOS DE LA UI CON MODALPROMPT) ───
-function renderTurnosAdmin() {
-  const info = $('turno-info');
-  if (!info) return;
-  if (turnoActivo) {
-    info.innerHTML = `<div class="turno-activo" style="border-left: 5px solid var(--success); padding: 12px; background: rgba(46, 204, 113, 0.1); border-radius:6px; margin-bottom:15px;">
-      <h4 style="color: var(--success); margin: 0 0 5px 0;">🟢 Turno en Operación</h4>
-      <p style="margin:2px 0; font-size:13px;"><b>ID del Turno:</b> #${turnoActivo.id}</p>
-      <p style="margin:2px 0; font-size:13px;"><b>Apertura por:</b> ${usuarios.find(u=>u.id===turnoActivo.usuario_id)?.nombre || 'Usuario Activo'}</p>
-      <p style="margin:2px 0; font-size:13px;"><b>Fondo Caja Inicial:</b> ${fmt(turnoActivo.fondo_inicial)}</p>
-      <p style="margin:2px 0; font-size:13px;"><b>Hora Inicial:</b> ${new Date(turnoActivo.fecha_apertura).toLocaleTimeString('es-MX')}</p>
-      <button class="btn btn-coral btn-sm" style="margin-top:10px;" onclick="cerrarTurno()">🔒 Realizar Arqueo y Cerrar Turno</button>
-    </div>`;
-    seg('btn-abrir-turno', e => e.style.display = 'none');
-  } else {
-    info.innerHTML = `<div style="border-left: 5px solid var(--danger); padding: 12px; background: rgba(231, 76, 60, 0.1); border-radius:6px; margin-bottom:15px;">
-      <p style="color:var(--danger); font-weight:bold; margin:0;">⚠️ No hay ningún turno abierto actualmente.</p>
-      <p style="color:var(--text-muted); font-size:12px; margin:4px 0 0 0;">Debes abrir caja antes de registrar órdenes en el mapa de mesas.</p>
-    </div>`;
-    seg('btn-abrir-turno', e => e.style.display = 'inline-flex');
-  }
+// ─── CORTE DE CAJA POR RANGO DE FECHAS ───
+// El sistema ya no requiere abrir/cerrar turno: opera de forma continua y el
+// corte de caja se genera bajo demanda para el rango de fechas que se necesite.
+function rangoFechaHoy() {
+  const hoy = new Date().toISOString().slice(0, 10);
+  return { desde: hoy, hasta: hoy };
 }
 
-window.cerrarTurno = async () => {
-  const user = await soloAdmin();
-  if (!user) return;
-  
-  const totalStr = await modalPrompt('💰 Arqueo de Caja', 'Escribe el TOTAL de dinero EFECTIVO real que se encuentra físicamente en caja:', true, "Ej: 1500");
-  if (totalStr === false) return;
-  
-  const total = parseFloat(totalStr) || 0;
-  try {
-    const r = await (await fetch('/api/turno/cerrar', { 
-      method:'POST', 
-      headers:{'Content-Type':'application/json'}, 
-      body: JSON.stringify({ usuario_id: user.id, total_efectivo_real: total }) 
-    })).json();
-    
-    await cargarTodo();
-    if(r.diferencia !== 0) {
-      await modalPrompt('⚠️ Turno Cerrado (Con Diferencia)', `El turno se cerró. Existe una diferencia detectada en caja de: ${fmt(r.diferencia)}`);
-    } else {
-      await modalPrompt('✅ Turno Cerrado Exitosamente', 'El balance de caja cuadró perfectamente sin discrepancias.');
-    }
-  } catch(e) { await modalPrompt('Error', 'Hubo un error de red al intentar procesar el cierre.'); }
-};
+seg('corte-fecha-desde', el => { const r = rangoFechaHoy(); el.value = r.desde; });
+seg('corte-fecha-hasta', el => { const r = rangoFechaHoy(); el.value = r.hasta; });
 
-seg('btn-abrir-turno', el => el.onclick = async () => {
+seg('btn-generar-corte', el => el.onclick = () => generarCorteCaja());
+
+async function generarCorteCaja() {
   const user = await adminOCajero();
   if (!user) return;
-  
-  const fondoStr = await modalPrompt('💰 Apertura de Caja', 'Ingresa el monto del FONDO INICIAL en efectivo para cambio:', true, "Ej: 500");
-  if (fondoStr === false) return;
-  
-  const fondo = parseFloat(fondoStr) || 0;
+  const desde = $('corte-fecha-desde')?.value || rangoFechaHoy().desde;
+  const hasta = $('corte-fecha-hasta')?.value || rangoFechaHoy().hasta;
   try {
-    await fetch('/api/turno/abrir', { 
-      method:'POST', 
-      headers:{'Content-Type':'application/json'}, 
-      body: JSON.stringify({ usuario_id: user.id, fondo_inicial: fondo }) 
+    const r = await (await fetch(`/api/reportes/corte?desde=${desde}&hasta=${hasta}`, { headers: authHeaders() })).json();
+    if (!r.okey) return modalPrompt('Error', r.error || 'No se pudo generar el corte de caja.');
+    const d = r.desglose;
+    seg('admin-corte-resultado', e => {
+      e.style.display = 'block';
+      e.innerHTML = `<div style="border-left:5px solid var(--primary);padding:12px;background:var(--bg);border-radius:6px;margin-top:10px;font-size:13px;">
+        <p style="margin:2px 0;"><b>Periodo:</b> ${desde}${hasta !== desde ? ' a ' + hasta : ''}</p>
+        <p style="margin:2px 0;">💵 Efectivo: <b>${fmt(d.efectivo)}</b></p>
+        <p style="margin:2px 0;">💳 Tarjeta: <b>${fmt(d.tarjeta)}</b></p>
+        <p style="margin:2px 0;">📱 Transferencia: <b>${fmt(d.transferencia)}</b></p>
+        <p style="margin:2px 0;color:var(--success);">❤️ Propinas: <b>${fmt(d.propinas)}</b></p>
+        <p style="margin:2px 0;color:var(--danger);">📉 Gastos: <b>-${fmt(d.gastos)}</b></p>
+        <p style="margin:6px 0 0 0;border-top:2px solid var(--primary);padding-top:6px;font-size:15px;">🧾 <b>Total Neto: ${fmt(d.totalNeto)}</b></p>
+      </div>`;
     });
-    await cargarTodo();
-    await modalPrompt('✅ Éxito', `Caja abierta correctamente con fondo inicial de ${fmt(fondo)}. El sistema está listo para facturar.`);
-  } catch(e) { await modalPrompt('Error', 'No se pudo comunicar con el servidor para abrir el turno.'); }
-});
+    imprimirCorte({ efec: d.efectivo, tarj: d.tarjeta, trans: d.transferencia, prop: d.propinas, gastos: d.gastos, gastosDetalle: r.gastosDetalle, periodo: desde === hasta ? desde : `${desde} a ${hasta}` });
+  } catch (e) { await modalPrompt('Error', 'Hubo un error de red al generar el corte de caja.'); }
+}
 
 // ─── GASTOS ───
 function renderGastosAdmin() {
   const cont = $('admin-lista-gastos');
   if (!cont) return;
   if (!listaGastos.length) { cont.innerHTML = '<span style="color:var(--text-muted);font-style:italic;">Sin gastos.</span>'; return; }
-  cont.innerHTML = listaGastos.map((g, idx) => `<div style="display:flex;justify-content:space-between;background:var(--bg);padding:4px 8px;border-radius:4px;align-items:center;"><span>📌 ${g.concepto}</span><span><b>-${fmt(g.monto)}</b> <i class="fa-solid fa-circle-xmark" style="color:var(--danger);cursor:pointer;margin-left:6px;" onclick="elimG(${idx})"></i></span></div>`).join('');
+  cont.innerHTML = listaGastos.map(g => `<div style="display:flex;justify-content:space-between;background:var(--bg);padding:4px 8px;border-radius:4px;align-items:center;"><span>📌 ${g.concepto}</span><span><b>-${fmt(g.monto)}</b> <i class="fa-solid fa-circle-xmark" style="color:var(--danger);cursor:pointer;margin-left:6px;" onclick="elimG(${g.id})"></i></span></div>`).join('');
 }
-window.elimG = (idx) => { listaGastos.splice(idx,1); guardar(); renderAdmin(); };
+// Antes esto sólo borraba el gasto en el navegador: como el servidor ignoraba el campo
+// "gastos" al guardar, el gasto "revivía" en el siguiente refresco automático (cada 4s).
+// Ahora se elimina realmente en la base de datos.
+window.elimG = async (id) => {
+  const u = await soloAdmin();
+  if (!u) return;
+  try {
+    await fetch('/api/retiros/' + id, { method: 'DELETE' });
+    await cargarTodo();
+    renderAdmin();
+  } catch(e) { modalPrompt('Error', 'No se pudo eliminar el gasto.'); }
+};
 
-seg('form-nuevo-gasto', el => el.onsubmit = (e) => {
+seg('form-nuevo-gasto', el => el.onsubmit = async (e) => {
   e.preventDefault();
-  if (!turnoActivo) return modalPrompt('Error','No hay turno abierto.');
   const concepto = $('gasto-concepto')?.value.trim();
   const monto = parseFloat($('gasto-monto')?.value||0);
   if (!concepto || !monto) return;
-  fetch('/api/retiros', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ turno_id: turnoActivo.id, usuario_id: CURRENT_USER.id||1, concepto, monto }) });
-  seg('form-nuevo-gasto', e => e.reset());
+  try {
+    const r = await fetch('/api/retiros', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ usuario_id: CURRENT_USER.id||1, concepto, monto }) });
+    const d = await r.json();
+    if (!r.ok) return modalPrompt('Error', d.error || 'No se pudo registrar el gasto.');
+    seg('form-nuevo-gasto', e2 => e2.reset());
+    // Antes el gasto no aparecía hasta el siguiente refresco automático (hasta 4s después),
+    // dando la impresión de que "no se registraba". Ahora se refleja de inmediato.
+    await cargarTodo();
+    renderAdmin();
+  } catch(e) { modalPrompt('Error', 'Error de red al registrar el gasto.'); }
 });
 
 function calcularReportesAdmin() {
@@ -708,23 +820,17 @@ function calcularReportesAdmin() {
   seg('rep-total-propinas', e => e.textContent = fmt(prop));
 }
 
-// ─── IMPRIMIR CORTE DE CAJA ───
-seg('btn-imprimir-corte', el => el.onclick = () => {
+// ─── IMPRIMIR CORTE DE CAJA (refactorizado en función reutilizable) ───
+function imprimirCorte({ efec, tarj, trans, prop, gastos, gastosDetalle, periodo }) {
   seg('overlay-ticket', e => e.style.display = 'none');
-  let efec = 0, tarj = 0, trans = 0, prop = 0;
-  historialVentas.forEach(v => {
-    if (v.cancelado) return;
-    prop += v.propina||0;
-    if ((v.metodo||'').includes('Efectivo')) efec += v.subtotal||0;
-    if ((v.metodo||'').includes('Tarjeta')) tarj += v.subtotal||0;
-    if ((v.metodo||'').includes('Transferencia')) trans += v.subtotal||0;
-  });
   const totalB = efec + tarj + trans;
-  const gastos = listaGastos.reduce((a,g) => a + g.monto, 0);
   const bal = totalB - gastos;
+  const listaGastosHtml = (gastosDetalle && gastosDetalle.length)
+    ? gastosDetalle.map(g => `<div class="ticket-subtotal-linea" style="font-size:11px;"><span>· ${g.concepto}</span><span>-${fmt(g.monto)}</span></div>`).join('')
+    : '';
   seg('ticket-corte-imprimible', e => {
     e.style.display = 'block';
-    e.innerHTML = `<div class="ticket-header"><h3>🐟 MARISCOS MATTY</h3><p><b>*** CORTE DE CAJA ***</b></p><p>${new Date().toLocaleString('es-MX')}</p></div>
+    e.innerHTML = `<div class="ticket-header"><h3>🐟 MARISCOS MATTY</h3><p><b>*** CORTE DE CAJA ${periodo ? '· ' + periodo : ''} ***</b></p><p>${new Date().toLocaleString('es-MX')}</p></div>
       <div class="ticket-calculos" style="background:transparent;padding:0;">
       <div class="ticket-subtotal-linea"><span>💵 Efectivo:</span><span>${fmt(efec)}</span></div>
       <div class="ticket-subtotal-linea"><span>💳 Tarjeta:</span><span>${fmt(tarj)}</span></div>
@@ -732,10 +838,11 @@ seg('btn-imprimir-corte', el => el.onclick = () => {
       <hr style="border:1px dashed #000;margin:6px 0;"><div class="ticket-subtotal-linea"><span>💰 Total:</span><span>${fmt(totalB)}</span></div>
       <div class="ticket-subtotal-linea" style="color:var(--success);"><span>❤️ Propinas:</span><span>${fmt(prop)}</span></div>
       <hr style="border:1px dashed #000;margin:6px 0;"><div class="ticket-subtotal-linea" style="color:var(--danger);"><span>📉 Gastos:</span><span>-${fmt(gastos)}</span></div>
+      ${listaGastosHtml}
       <div class="ticket-total" style="border-top:2px solid #000;padding-top:6px;margin-top:6px;"><span>🧾 BALANCE</span><span>${fmt(bal)}</span></div></div>`;
   });
   setTimeout(() => { window.print(); }, 200);
-});
+}
 
 seg('btn-borrar-ventas', el => el.onclick = async () => {
   const u = await soloAdmin();
@@ -777,6 +884,7 @@ function iniciarSistema() {
   try {
     const saved = sessionStorage.getItem('mattyUser');
     if (saved) { const u = JSON.parse(saved); CURRENT_USER.id = u.id; CURRENT_USER.nombre = u.nombre; CURRENT_USER.rol = u.rol; }
+    AUTH_TOKEN = sessionStorage.getItem('mattyToken') || '';
   } catch(e) {}
   cargarTodo();
   actualizarReloj();

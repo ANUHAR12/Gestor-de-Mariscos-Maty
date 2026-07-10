@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mariscos Matty - POS</title>
+    <title>Mariscos Matty · Sistema de Punto de Venta</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.1/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -13,7 +13,7 @@
     <div class="overlay overlay-login" id="overlay-login" style="display:flex; z-index:5000; background:linear-gradient(135deg, #1B3A4B 0%, #0F2430 100%);">
         <div class="ui-modal" style="width:340px;">
             <h3><i class="fa-solid fa-lock"></i> Acceso Restringido</h3>
-            <p>Mariscos Matty · Sistema POS<br>Ingresa la contraseña para continuar.</p>
+            <p>Mariscos Matty · Punto de Venta<br>Ingresa la contraseña para continuar.</p>
             <div class="form-group" style="text-align:left; margin-top:18px;">
                 <input type="password" id="login-password-input" placeholder="Contraseña de acceso" autocomplete="off" style="width:100%;padding:10px;border-radius:6px;border:1px solid var(--border);font-size:14px;">
             </div>
@@ -28,7 +28,7 @@
     <div class="top-bar">
         <div class="marca">
             <h1>Mariscos <span>Matty</span></h1>
-            <span class="etiqueta-pos">Sistema POS</span>
+            <span class="etiqueta-pos">Punto de Venta</span>
         </div>
         <div class="top-bar-derecha" id="top-bar-derecha">
             <div class="reloj" id="reloj"></div>
@@ -80,7 +80,7 @@
             <div class="mesa-top">
                 <button class="btn btn-outline" id="btn-volver"><i class="fa-solid fa-arrow-left"></i> Volver</button>
                 <h2 id="titulo-mesa">Mesa</h2>
-                <button class="btn btn-coral" id="btn-cancelar-mesa"><i class="fa-solid fa-rotate-left"></i> Cancelar</button>
+                
             </div>
             <div class="orden-layout">
                 <div>
@@ -95,6 +95,10 @@
                     <div class="panel-orden-header">
                         <h3>Orden Actual</h3>
                         <span id="badge-cliente-info" class="badge-cliente"></span>
+                    </div>
+                    <div id="caja-comandas-enviadas" class="caja-comandas-enviadas" style="display:none;">
+                        <h4><i class="fa-solid fa-fire-burner"></i> Comandas enviadas a cocina</h4>
+                        <div id="lista-comandas-enviadas"></div>
                     </div>
                     <div id="orden-lista"></div>
                     <div class="orden-total">
@@ -132,16 +136,9 @@
                         <div class="total-mesas-badge">Total: <strong id="admin-total-mesas">0</strong> mesas</div>
                     </div>
 
-                    <!-- TURNOS -->
-                    <div class="admin-card" style="margin-top:20px;">
-                        <h3><i class="fa-solid fa-clock"></i> Turno / Caja</h3>
-                        <div id="turno-info"></div>
-                        <button class="btn btn-gold" id="btn-abrir-turno" style="width:100%;margin-top:8px;"><i class="fa-solid fa-play"></i> Abrir Turno</button>
-                    </div>
-
                     <!-- GASTOS -->
-                    <div class="admin-card" style="margin-top:20px;">
-                        <h3><i class="fa-solid fa-wallet"></i> Gastos del Turno</h3>
+                    <div class="admin-card">
+                        <h3><i class="fa-solid fa-wallet"></i> Gastos del Día</h3>
                         <form id="form-nuevo-gasto" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
                             <input type="text" id="gasto-concepto" placeholder="Concepto" required style="padding:7px;border:1px solid var(--border);border-radius:4px;font-size:12px;">
                             <input type="number" id="gasto-monto" placeholder="Monto $" min="1" required style="padding:7px;border:1px solid var(--border);border-radius:4px;font-size:12px;">
@@ -150,18 +147,39 @@
                         <div id="admin-lista-gastos" style="max-height:100px;overflow-y:auto;font-size:11px;display:flex;flex-direction:column;gap:3px;"></div>
                     </div>
 
-                    <!-- REPORTE CAJA -->
+                    <!-- REPORTE DEL DÍA -->
                     <div class="admin-card" style="margin-top:20px;">
-                        <h3><i class="fa-solid fa-chart-pie"></i> Reporte de Caja</h3>
+                        <h3><i class="fa-solid fa-chart-pie"></i> Resumen del Día</h3>
                         <div class="reporte-totales">
                             <div class="total-metodo">💵 Efectivo: <strong id="rep-efectivo">$0</strong></div>
-                            <div class="total-metodo">💳 Tarjeta: <strong id="rep-tarjeta">$0</strong></div>
-                            <div class="total-metodo">📱 Transferencia: <strong id="rep-transferencia">$0</strong></div>
                             <div class="total-metodo" style="color:var(--danger);border-top:1px solid var(--border);padding-top:4px;">📉 Gastos: <strong id="rep-total-gastos">-$0</strong></div>
                             <div class="total-metodo" style="border-top:2px solid var(--primary);padding-top:6px;font-size:14px;color:var(--primary);"><strong>💰 Balance: <span id="rep-total-ventas">$0</span></strong></div>
                             <div class="total-metodo" style="color:var(--success);font-size:12px;">❤️ Propinas: <strong id="rep-total-propinas">$0</strong></div>
                         </div>
-                        <button class="btn btn-gold" id="btn-imprimir-corte" style="width:100%;margin-top:10px;padding:8px;"><i class="fa-solid fa-print"></i> Corte de Caja</button>
+                    </div>
+
+                    <!-- CORTE DE CAJA POR FECHAS -->
+                    <div class="admin-card" style="margin-top:20px;">
+                        <h3><i class="fa-solid fa-cash-register"></i> Corte de Caja</h3>
+                        <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px 0;">Genera el corte de caja para cualquier día o rango de fechas.</p>
+                        <div style="display:flex;gap:6px;margin-bottom:8px;">
+                            <div style="flex:1;">
+                                <label style="font-size:11px;color:var(--text-muted);">Desde</label>
+                                <input type="date" id="corte-fecha-desde" style="width:100%;padding:7px;border:1px solid var(--border);border-radius:4px;font-size:12px;">
+                            </div>
+                            <div style="flex:1;">
+                                <label style="font-size:11px;color:var(--text-muted);">Hasta</label>
+                                <input type="date" id="corte-fecha-hasta" style="width:100%;padding:7px;border:1px solid var(--border);border-radius:4px;font-size:12px;">
+                            </div>
+                        </div>
+                        <button class="btn btn-gold" id="btn-generar-corte" style="width:100%;padding:8px;"><i class="fa-solid fa-print"></i> Generar e Imprimir Corte</button>
+                        <div id="admin-corte-resultado" style="display:none;"></div>
+                    </div>
+
+                    <!-- VENTAS DEL DÍA (con opción de cancelar) -->
+                    <div class="admin-card" style="margin-top:20px;">
+                        <h3><i class="fa-solid fa-receipt"></i> Ventas del Día</h3>
+                        <div id="admin-lista-ventas" style="max-height:140px;overflow-y:auto;font-size:11px;display:flex;flex-direction:column;gap:3px;"></div>
                     </div>
                 </div>
 
@@ -231,8 +249,13 @@
                     </div>
                 </div>
                 <div class="ticket-total"><span>TOTAL</span><span id="ticket-total-valor">$0</span></div>
+                <div class="ticket-pago"><label>Método de pago</label>
+                    <div class="propina-selector" id="metodo-pago-selector">
+                        <button class="btn-propina btn-metodo" data-metodo="Efectivo">💵 Efectivo</button>
+                    </div>
+                </div>
                 <hr style="border:1px dashed var(--border);margin:10px 0;">
-                <div class="ticket-pago">
+                <div class="ticket-pago" id="bloque-pago-efectivo">
                     <label>💵 Efectivo recibido</label>
                     <input type="number" id="pago-recibido" readonly>
                     <div class="teclado-grid">
