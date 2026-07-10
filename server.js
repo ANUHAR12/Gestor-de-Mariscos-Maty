@@ -205,6 +205,60 @@ app.post('/api/estado', (req, res) => {
   res.json({ okey: true });
 });
 
+// ─── ENDPOINTS DE GESTIÓN DE USUARIOS (Administrador, Cajero, Mesero) ───
+const ROLES_VALIDOS = ['Administrador', 'Cajero', 'Mesero'];
+
+// Lista completa (activos e inactivos) para el panel de administración. No incluye el PIN.
+app.get('/api/usuarios', requireRol('Administrador'), (req, res) => {
+  const usuarios = db.prepare('SELECT id, nombre, rol, activo, created_at FROM usuarios ORDER BY activo DESC, nombre ASC').all();
+  res.json({ okey: true, usuarios });
+});
+
+app.post('/api/usuarios', requireRol('Administrador'), (req, res) => {
+  const { nombre, rol, pin } = req.body;
+  if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es requerido' });
+  if (!ROLES_VALIDOS.includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+  if (!pin || !/^\d{4,6}$/.test(pin)) return res.status(400).json({ error: 'El PIN debe tener entre 4 y 6 dígitos' });
+  const pinExistente = db.prepare('SELECT id FROM usuarios WHERE pin = ? AND activo = 1').get(pin);
+  if (pinExistente) return res.status(400).json({ error: 'Ese PIN ya está en uso por otro usuario activo' });
+
+  const info = db.prepare('INSERT INTO usuarios (nombre, rol, pin, activo) VALUES (?, ?, ?, 1)').run(nombre.trim(), rol, pin);
+  const usuario = db.prepare('SELECT id, nombre, rol, activo, created_at FROM usuarios WHERE id = ?').get(info.lastInsertRowid);
+  res.json({ okey: true, usuario });
+});
+
+app.put('/api/usuarios/:id', requireRol('Administrador'), (req, res) => {
+  const { nombre, rol, pin } = req.body;
+  const existente = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.params.id);
+  if (!existente) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es requerido' });
+  if (!ROLES_VALIDOS.includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+
+  if (pin) {
+    if (!/^\d{4,6}$/.test(pin)) return res.status(400).json({ error: 'El PIN debe tener entre 4 y 6 dígitos' });
+    const pinExistente = db.prepare('SELECT id FROM usuarios WHERE pin = ? AND activo = 1 AND id != ?').get(pin, req.params.id);
+    if (pinExistente) return res.status(400).json({ error: 'Ese PIN ya está en uso por otro usuario activo' });
+    db.prepare('UPDATE usuarios SET nombre = ?, rol = ?, pin = ? WHERE id = ?').run(nombre.trim(), rol, pin, req.params.id);
+  } else {
+    db.prepare('UPDATE usuarios SET nombre = ?, rol = ? WHERE id = ?').run(nombre.trim(), rol, req.params.id);
+  }
+  const usuario = db.prepare('SELECT id, nombre, rol, activo, created_at FROM usuarios WHERE id = ?').get(req.params.id);
+  res.json({ okey: true, usuario });
+});
+
+// Activar/desactivar en vez de borrar, para conservar la integridad de ventas y gastos ya registrados.
+app.post('/api/usuarios/:id/toggle', requireRol('Administrador'), (req, res) => {
+  const existente = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.params.id);
+  if (!existente) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (existente.rol === 'Administrador' && existente.activo === 1) {
+    const adminsActivos = db.prepare("SELECT COUNT(*) as cuenta FROM usuarios WHERE rol = 'Administrador' AND activo = 1").get();
+    if (adminsActivos.cuenta <= 1) return res.status(400).json({ error: 'No puedes desactivar al único Administrador activo' });
+  }
+  const nuevoEstado = existente.activo ? 0 : 1;
+  db.prepare('UPDATE usuarios SET activo = ? WHERE id = ?').run(nuevoEstado, req.params.id);
+  res.json({ okey: true, activo: nuevoEstado });
+});
+
 // ─── ENDPOINTS DE VENTAS Y GASTOS ───
 app.post('/api/ventas', (req, res) => {
   const { mesa, subtotal, propina, metodo, propina_metodo, items, mesero_id } = req.body;
@@ -282,6 +336,20 @@ app.get('/api/reportes/corte', requireRol('Administrador', 'Cajero'), (req, res)
     ventasCanceladas,
     gastosDetalle: gastos
   });
+});
+
+// Borrar las ventas del día (usado al cerrar caja después de imprimir el corte).
+// No toca las ventas de otros días.
+app.delete('/api/ventas/dia', requireRol('Administrador', 'Cajero'), (req, res) => {
+  const info = db.prepare("DELETE FROM ventas WHERE date(fecha) = date('now','localtime')").run();
+  res.json({ okey: true, eliminadas: info.changes });
+});
+
+// Borrar los gastos/retiros del día (usado junto con /api/ventas/dia al cerrar caja,
+// para que el balance también quede en blanco). No toca gastos de otros días.
+app.delete('/api/retiros/dia', requireRol('Administrador', 'Cajero'), (req, res) => {
+  const info = db.prepare("DELETE FROM retiros_caja WHERE date(created_at) = date('now','localtime')").run();
+  res.json({ okey: true, eliminados: info.changes });
 });
 
 // ─── PARA REEMPLAZAR EL setInterval DE APP.JS (REPARADO) ───

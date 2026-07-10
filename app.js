@@ -40,7 +40,7 @@ function authHeaders() {
   return AUTH_TOKEN ? { 'Authorization': 'Bearer ' + AUTH_TOKEN } : {};
 }
 
-async function modalPrompt(titulo, mensaje, conInput = false, placeholderInput = "") {
+async function modalPrompt(titulo, mensaje, conInput = false, placeholderInput = "", inputType = "text") {
   return new Promise((resolver) => {
     resolverUIModal = resolver;
     seg('ui-modal-titulo', e => e.textContent = titulo);
@@ -49,6 +49,7 @@ async function modalPrompt(titulo, mensaje, conInput = false, placeholderInput =
     if (inp) {
       inp.value = '';
       inp.placeholder = placeholderInput;
+      inp.type = inputType;
     }
     seg('ui-modal-input-container', e => e.style.display = conInput ? 'block' : 'none');
     if (conInput && inp) setTimeout(() => inp.focus(), 100);
@@ -64,7 +65,7 @@ seg('btn-ui-aceptar', el => el.onclick = () => {
 seg('btn-ui-cancelar', el => el.onclick = () => { seg('overlay-ui', e => e.style.display = 'none'); if (resolverUIModal) resolverUIModal(false); });
 
 async function solicitarAcceso(rolesPermitidos = ['Administrador']) {
-  const pw = await modalPrompt('🔐 Autorización Requerida', 'Ingresa tu PIN:', true);
+  const pw = await modalPrompt('🔐 Autorización Requerida', 'Ingresa tu PIN:', true, '', 'password');
   if (pw === false) return false;
   const u = await loginUsuario(pw);
   if (!u) { await modalPrompt('Acceso Denegado', 'PIN incorrecto.'); return false; }
@@ -526,23 +527,8 @@ document.querySelectorAll('.btn-metodo').forEach(btn => {
   btn.onclick = () => { metodoPagoActivo = btn.dataset.metodo; actualizarBotonesMetodo(); calcularPrecios(); };
 });
 
-async function confirmarCobro() {
-  const orden = obtenerMesa();
-  const prods = esCobroParcialDeDivision ? cuentaSeparadaActiva : (orden ? orden.items : []);
-  const subtotal = sub(prods);
-  const propina = subtotal * (porcentajePropina / 100);
-  const total = subtotal + propina;
-  // Sólo se exige verificar suficiencia de efectivo cuando el pago es en efectivo;
-  // con Tarjeta/Transferencia no hay "cambio" que calcular.
-  if (metodoPagoActivo === 'Efectivo') {
-    const pago = parseFloat($('pago-recibido')?.value || 0);
-    if (pago < total) return modalPrompt('Error','Efectivo insuficiente.');
-  }
-  if (!ticketFueImpreso) return modalPrompt('Falta Imprimir','Debes imprimir el ticket primero.');
-  const user = await adminOCajero();
-  if (!user) return;
-  ejecutarCierreDeMesaFisico(orden, prods, subtotal, propina);
-}
+// El cierre de la mesa ahora ocurre automáticamente al imprimir el ticket (btn-imprimir),
+// por eso ya no existe un botón/flujo separado de "Finalizar y Cerrar".
 
 function ejecutarCierreDeMesaFisico(orden, prods, subtotal, propina) {
   try {
@@ -564,21 +550,83 @@ function ejecutarCierreDeMesaFisico(orden, prods, subtotal, propina) {
   seg('overlay-ticket', e => e.style.display = 'none');
   regresar();
 }
-seg('btn-confirmar-cobro', el => el.onclick = confirmarCobro);
 
-// ─── IMPRIMIR TICKET DE CONSUMO ───
-seg('btn-imprimir', el => el.onclick = () => {
+// ─── IMPRIMIR TICKET DE CONSUMO (diseño térmico dedicado 58mm) ───
+function construirTicketVenta({ titulo, prods, subtotal, propina, total, metodo, pagoRecibido, cambio }) {
+  const fecha = new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+  const itemsHtml = prods.map(it => `<div>
+      <div class="t58-item-fila"><span class="t58-item-nombre">${it.cantidad}x ${it.nombre}</span><span class="t58-item-precio">${fmt(it.precio * it.cantidad)}</span></div>
+      ${it.nota ? `<div class="t58-item-nota">· ${it.nota}</div>` : ''}
+    </div>`).join('');
+
+  const metodoIcono = metodo === 'Efectivo' ? '💵' : metodo === 'Tarjeta' ? '💳' : '📱';
+  const pagoHtml = (metodo === 'Efectivo' && pagoRecibido)
+    ? `<div class="t58-linea"><span>Recibido</span><span>${fmt(pagoRecibido)}</span></div>
+       <div class="t58-linea"><span>Cambio</span><span>${fmt(cambio||0)}</span></div>`
+    : '';
+
+  return `
+    <div class="t58-header">
+      <div class="t58-logo">🐟 MARISCOS MATTY</div>
+      <div class="t58-tagline">¡Sabor fresco de la costa!</div>
+      <div class="t58-meta">${titulo}</div>
+      <div class="t58-meta">${fecha}</div>
+      ${CURRENT_USER.nombre ? `<div class="t58-meta">Atendió: ${CURRENT_USER.nombre}</div>` : ''}
+    </div>
+    <div class="t58-divisor"></div>
+    <div class="t58-items">${itemsHtml}</div>
+    <div class="t58-divisor"></div>
+    <div class="t58-totales">
+      <div class="t58-linea"><span>Subtotal</span><span>${fmt(subtotal)}</span></div>
+      <div class="t58-linea"><span>Propina</span><span>${fmt(propina)}</span></div>
+      <div class="t58-linea t58-total"><span>TOTAL</span><span>${fmt(total)}</span></div>
+    </div>
+    <div class="t58-divisor"></div>
+    <div class="t58-totales">
+      <div class="t58-linea"><span>${metodoIcono} Método</span><span>${metodo}</span></div>
+      ${pagoHtml}
+    </div>
+    <div class="t58-footer">
+      <div class="t58-divisor"></div>
+      <p>¡Gracias por su visita!</p>
+      <p>Vuelva pronto 🦐</p>
+    </div>`;
+}
+
+function imprimirTicketVenta(datos) {
   seg('ticket-corte-imprimible', e => e.style.display = 'none');
-  seg('overlay-ticket', e => e.style.display = 'flex');
-  setTimeout(() => { 
-    window.print(); 
-    ticketFueImpreso = true;
-    
-    const orden = obtenerMesa();
-    const prods = esCobroParcialDeDivision ? cuentaSeparadaActiva : (orden ? orden.items : []);
-    const subtotal = sub(prods);
-    const propina = subtotal * (porcentajePropina / 100);
-    
+  seg('ticket-venta-imprimible', e => {
+    e.innerHTML = construirTicketVenta(datos);
+    e.style.display = 'block';
+  });
+  setTimeout(() => {
+    window.print();
+    // Ocultarlo de nuevo justo después de mandar a imprimir, para que no se quede
+    // visible en la pantalla normal del POS (solo debe aparecer en el papel impreso).
+    seg('ticket-venta-imprimible', e => { e.style.display = 'none'; e.innerHTML = ''; });
+  }, 200);
+}
+
+seg('btn-imprimir', el => el.onclick = () => {
+  const orden = obtenerMesa();
+  const prods = esCobroParcialDeDivision ? cuentaSeparadaActiva : (orden ? orden.items : []);
+  const subtotal = sub(prods);
+  const propina = subtotal * (porcentajePropina / 100);
+  const total = subtotal + propina;
+  const titulo = esMesaVirtualActiva ? (orden ? orden.tipo : '') : `Mesa ${orden ? orden.numero : ''}`;
+  const pagoRecibido = metodoPagoActivo === 'Efectivo' ? parseFloat($('pago-recibido')?.value || 0) : null;
+  const cambio = pagoRecibido ? Math.max(pagoRecibido - total, 0) : null;
+
+  // Antes de imprimir se valida que haya suficiente efectivo (si aplica), igual que
+  // antes se validaba en "Finalizar y Cerrar", ya que ese botón desapareció y ahora
+  // Imprimir Ticket es quien cierra la mesa.
+  if (metodoPagoActivo === 'Efectivo' && pagoRecibido < total) {
+    return modalPrompt('Error', 'Efectivo insuficiente.');
+  }
+
+  imprimirTicketVenta({ titulo, prods, subtotal, propina, total, metodo: metodoPagoActivo, pagoRecibido, cambio });
+
+  setTimeout(() => {
     ejecutarCierreDeMesaFisico(orden, prods, subtotal, propina);
   }, 250);
 });
@@ -614,6 +662,8 @@ async function abrirAdmin() {
 seg('btn-admin-panel', el => el.onclick = abrirAdmin);
 seg('btn-volver-admin', el => el.onclick = () => { seg('vista-admin', e => e.style.display = 'none'); const t = $('tab-mesas'); if (t) t.click(); });
 
+let filtroPlatillo = '';
+
 function renderAdmin() {
   seg('admin-total-mesas', e => e.textContent = estadoMesas.length);
 
@@ -627,46 +677,44 @@ function renderAdmin() {
   const btns = $('admin-lista-categorias-btns');
   if (btns) {
     if (!adminCategoriaActiva && Object.keys(MENU).length > 0) adminCategoriaActiva = Object.keys(MENU)[0];
-    btns.innerHTML = Object.keys(MENU).map(cat => `<button class="cat-btn ${cat === adminCategoriaActiva ? 'activo' : ''}" style="padding:6px 14px;font-size:12px;" onclick="window.acat='${cat}'; adminCategoriaActiva='${cat}'; renderAdmin()">${cat}</button>`).join('');
+    btns.innerHTML = Object.keys(MENU).map(cat => `<button class="cat-btn ${cat === adminCategoriaActiva ? 'activo' : ''}" style="padding:6px 14px;font-size:12px;" onclick="window.acat='${cat}'; adminCategoriaActiva='${cat}'; renderAdmin()">${cat} <span class="cat-btn-contador">${(MENU[cat]||[]).length}</span></button>`).join('');
   }
   
   const tbody = $('cuerpo-tabla-admin');
   if (tbody) {
     const cat = window.acat || adminCategoriaActiva;
     adminCategoriaActiva = cat;
-    if (MENU[cat] && MENU[cat].length > 0) {
-      tbody.innerHTML = MENU[cat].map(p => `<tr><td><strong>${p.nombre}</strong></td><td>${fmt(p.precio)}</td><td><button class="btn btn-sm" onclick="editarP('${p.id}','${cat}')"><i class="fa-solid fa-pen"></i></button><button class="btn btn-sm btn-coral" onclick="elimP('${cat}','${p.id}')"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('');
+    const platillosCat = MENU[cat] || [];
+    seg('admin-contador-platillos', e => e.textContent = platillosCat.length);
+    const filtro = filtroPlatillo.trim().toLowerCase();
+    const visibles = filtro ? platillosCat.filter(p => p.nombre.toLowerCase().includes(filtro)) : platillosCat;
+    if (visibles.length > 0) {
+      tbody.innerHTML = visibles.map(p => `<tr class="${p.agotado ? 'fila-agotado' : ''}">
+          <td><strong>${p.nombre}</strong></td>
+          <td>${fmt(p.precio)}</td>
+          <td><span class="estado-badge ${p.agotado ? 'estado-agotado' : 'estado-disponible'}" onclick="toggleAgotado('${cat}','${p.id}')" title="Clic para cambiar">${p.agotado ? '⛔ Agotado' : '✅ Disponible'}</span></td>
+          <td><button class="btn btn-sm" onclick="editarP('${p.id}','${cat}')" title="Editar"><i class="fa-solid fa-pen"></i></button><button class="btn btn-sm btn-coral" onclick="elimP('${cat}','${p.id}')" title="Eliminar"><i class="fa-solid fa-trash"></i></button></td>
+        </tr>`).join('');
+    } else if (filtro) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding: 20px;">🔎 Sin resultados para "' + filtro + '".</td></tr>';
     } else {
-      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--text-muted); padding: 20px;">📂 Categoría recién creada y vacía. Añade un platillo usando el formulario de la derecha.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding: 20px;">📂 Categoría recién creada y vacía. Añade un platillo usando el formulario de arriba.</td></tr>';
     }
   }
   calcularReportesAdmin();
   renderGastosAdmin();
-  renderVentasAdmin();
 }
 
-// ─── VENTAS DEL DÍA (permite cancelar una venta con motivo, como en Soft Restaurant) ───
-function renderVentasAdmin() {
-  const cont = $('admin-lista-ventas');
-  if (!cont) return;
-  if (!historialVentas.length) { cont.innerHTML = '<span style="color:var(--text-muted);font-style:italic;">Sin ventas registradas hoy.</span>'; return; }
-  cont.innerHTML = historialVentas.slice().reverse().map(v => `<div style="display:flex;justify-content:space-between;background:var(--bg);padding:4px 8px;border-radius:4px;align-items:center;${v.cancelado ? 'opacity:0.5;text-decoration:line-through;' : ''}">
-      <span>${v.mesa} · ${v.metodo}</span>
-      <span><b>${fmt(v.subtotal)}</b> ${!v.cancelado ? `<i class="fa-solid fa-ban" style="color:var(--danger);cursor:pointer;margin-left:6px;" onclick="cancelarVenta(${v.id})" title="Cancelar venta"></i>` : ''}</span>
-    </div>`).join('');
-}
+seg('admin-buscar-platillo', el => el.oninput = () => { filtroPlatillo = el.value; renderAdmin(); });
 
-window.cancelarVenta = async (ventaId) => {
-  const u = await soloAdmin();
-  if (!u) return;
-  const motivo = await modalPrompt('⚠️ Cancelar Venta', 'Escribe el motivo de la cancelación:', true, 'Ej: Cliente inconforme');
-  if (motivo === false) return;
-  try {
-    const r = await fetch(`/api/ventas/${ventaId}/cancelar`, { method:'POST', headers: { 'Content-Type':'application/json', ...authHeaders() }, body: JSON.stringify({ motivo }) });
-    if (!r.ok) { const d = await r.json().catch(()=>({})); return modalPrompt('Error', d.error || 'No se pudo cancelar la venta.'); }
-    await cargarTodo();
-    renderAdmin();
-  } catch(e) { modalPrompt('Error', 'Error de red al cancelar la venta.'); }
+// Alterna la disponibilidad de un platillo (se refleja de inmediato en el punto de venta:
+// las tarjetas "agotadas" se deshabilitan automáticamente para los meseros).
+window.toggleAgotado = async (cat, id) => {
+  const p = MENU[cat]?.find(x => x.id === id);
+  if (!p) return;
+  p.agotado = !p.agotado;
+  await guardar();
+  renderAdmin();
 };
 
 window.editarP = (id, cat) => {
@@ -677,6 +725,7 @@ window.editarP = (id, cat) => {
   seg('admin-platillo-cat', e => e.value = cat);
   seg('admin-platillo-nombre', e => e.value = p.nombre);
   seg('admin-platillo-precio', e => e.value = p.precio);
+  seg('admin-platillo-agotado', e => e.checked = !!p.agotado);
   seg('btn-cancelar-edicion', e => e.style.display = 'inline-flex');
 };
 window.elimP = async (cat, id) => {
@@ -700,14 +749,15 @@ seg('form-nuevo-platillo', el => el.onsubmit = (e) => {
   const cat = $('admin-platillo-cat')?.value;
   const nombre = ($('admin-platillo-nombre')?.value||'').trim();
   const precio = parseFloat($('admin-platillo-precio')?.value||0);
+  const agotado = !!$('admin-platillo-agotado')?.checked;
   if (!cat || !nombre || !precio) return;
   
   if (!MENU[cat]) MENU[cat] = [];
   
-  if (!id) MENU[cat].push({ id: Date.now().toString(), nombre, precio, agotado: false });
+  if (!id) MENU[cat].push({ id: Date.now().toString(), nombre, precio, agotado });
   else {
     Object.keys(MENU).forEach(c => { MENU[c] = MENU[c].filter(x => x.id !== id); });
-    MENU[cat].push({ id, nombre, precio, agotado: false });
+    MENU[cat].push({ id, nombre, precio, agotado });
   }
   guardar(); limpiarForm(); adminCategoriaActiva = cat; window.acat = cat; renderAdmin();
 });
@@ -725,6 +775,23 @@ seg('btn-nueva-categoria', el => el.onclick = async () => {
   
   await guardar();
   renderAdmin(); 
+});
+
+// Elimina la categoría completa (y todos sus platillos) tras confirmar dos veces datos concretos.
+seg('btn-eliminar-categoria', el => el.onclick = async () => {
+  const u = await soloAdmin();
+  if (!u) return;
+  const cat = window.acat || adminCategoriaActiva;
+  if (!cat || !MENU[cat]) return modalPrompt('Error', 'Selecciona una categoría primero.');
+  const cantidad = MENU[cat].length;
+  const confirmacion = await modalPrompt('⚠️ Eliminar Categoría', `Esto eliminará "${cat}" y sus ${cantidad} platillo(s). Esta acción no se puede deshacer. ¿Continuar?`);
+  if (!confirmacion) return;
+  delete MENU[cat];
+  const restantes = Object.keys(MENU);
+  adminCategoriaActiva = restantes[0] || '';
+  window.acat = adminCategoriaActiva;
+  await guardar();
+  renderAdmin();
 });
 
 // ─── CORTE DE CAJA POR RANGO DE FECHAS ───
@@ -751,26 +818,71 @@ async function generarCorteCaja() {
     const d = r.desglose;
     seg('admin-corte-resultado', e => {
       e.style.display = 'block';
-      e.innerHTML = `<div style="border-left:5px solid var(--primary);padding:12px;background:var(--bg);border-radius:6px;margin-top:10px;font-size:13px;">
-        <p style="margin:2px 0;"><b>Periodo:</b> ${desde}${hasta !== desde ? ' a ' + hasta : ''}</p>
-        <p style="margin:2px 0;">💵 Efectivo: <b>${fmt(d.efectivo)}</b></p>
-        <p style="margin:2px 0;">💳 Tarjeta: <b>${fmt(d.tarjeta)}</b></p>
-        <p style="margin:2px 0;">📱 Transferencia: <b>${fmt(d.transferencia)}</b></p>
-        <p style="margin:2px 0;color:var(--success);">❤️ Propinas: <b>${fmt(d.propinas)}</b></p>
-        <p style="margin:2px 0;color:var(--danger);">📉 Gastos: <b>-${fmt(d.gastos)}</b></p>
-        <p style="margin:6px 0 0 0;border-top:2px solid var(--primary);padding-top:6px;font-size:15px;">🧾 <b>Total Neto: ${fmt(d.totalNeto)}</b></p>
+      e.innerHTML = `<div class="corte-resultado-box">
+        <p class="corte-resultado-periodo"><b>Periodo:</b> ${desde}${hasta !== desde ? ' a ' + hasta : ''}</p>
+        <div class="corte-resultado-linea"><span>💵 Efectivo</span><b>${fmt(d.efectivo)}</b></div>
+        <div class="corte-resultado-linea"><span>💳 Tarjeta</span><b>${fmt(d.tarjeta)}</b></div>
+        <div class="corte-resultado-linea"><span>📱 Transferencia</span><b>${fmt(d.transferencia)}</b></div>
+        <div class="corte-resultado-linea" style="color:var(--success);"><span>❤️ Propinas</span><b>${fmt(d.propinas)}</b></div>
+        <div class="corte-resultado-linea" style="color:var(--danger);"><span>📉 Gastos</span><b>-${fmt(d.gastos)}</b></div>
+        <div class="corte-resultado-total"><span>🧾 Total Neto</span><span>${fmt(d.totalNeto)}</span></div>
       </div>`;
     });
     imprimirCorte({ efec: d.efectivo, tarj: d.tarjeta, trans: d.transferencia, prop: d.propinas, gastos: d.gastos, gastosDetalle: r.gastosDetalle, periodo: desde === hasta ? desde : `${desde} a ${hasta}` });
+
+    // El cierre de caja (borrar ventas del día + cerrar la página) sólo aplica cuando
+    // el corte impreso es justo el de HOY; si se consulta un rango de fechas pasado
+    // (para revisar historial) no se debe borrar nada ni cerrar la pestaña.
+    const hoy = rangoFechaHoy().desde;
+    if (desde === hoy && hasta === hoy) {
+      cerrarCajaDelDia();
+    }
   } catch (e) { await modalPrompt('Error', 'Hubo un error de red al generar el corte de caja.'); }
+}
+
+// Borra las ventas y los gastos del día en el servidor, deja la pantalla en blanco
+// de inmediato (sin esperar el refresco automático de 4s ni a que la pestaña cierre)
+// y luego intenta cerrar la pestaña/ventana, dando tiempo a que se complete la
+// impresión del corte antes de hacerlo.
+let intervaloAuto = null;
+
+async function cerrarCajaDelDia() {
+  try {
+    await Promise.all([
+      fetch('/api/ventas/dia', { method: 'DELETE', headers: authHeaders() }),
+      fetch('/api/retiros/dia', { method: 'DELETE', headers: authHeaders() })
+    ]);
+  } catch (e) { console.error('No se pudieron borrar las ventas/gastos del día:', e); }
+
+  // Detenemos el auto-refresh para que no sobreescriba los datos locales
+  // con datos viejos del servidor que aún no se han borrado.
+  if (intervaloAuto) {
+    clearInterval(intervaloAuto);
+    intervaloAuto = null;
+  }
+
+  // Dejamos en blanco de inmediato: ventas, gastos y el balance (que se calcula
+  // a partir de ambos), sin depender de que la pestaña se cierre.
+  historialVentas = [];
+  listaGastos = [];
+  renderAdmin();
+
+  setTimeout(() => {
+    window.close();
+    // Muchos navegadores bloquean el cierre de pestañas que el usuario abrió manualmente
+    // (no vía script). Si el cierre no se pudo hacer, avisamos para que la cierre a mano.
+    setTimeout(() => {
+      modalPrompt('✅ Caja Cerrada', 'Las ventas y gastos del día fueron eliminados. Puedes cerrar esta ventana.');
+    }, 300);
+  }, 1500);
 }
 
 // ─── GASTOS ───
 function renderGastosAdmin() {
   const cont = $('admin-lista-gastos');
   if (!cont) return;
-  if (!listaGastos.length) { cont.innerHTML = '<span style="color:var(--text-muted);font-style:italic;">Sin gastos.</span>'; return; }
-  cont.innerHTML = listaGastos.map(g => `<div style="display:flex;justify-content:space-between;background:var(--bg);padding:4px 8px;border-radius:4px;align-items:center;"><span>📌 ${g.concepto}</span><span><b>-${fmt(g.monto)}</b> <i class="fa-solid fa-circle-xmark" style="color:var(--danger);cursor:pointer;margin-left:6px;" onclick="elimG(${g.id})"></i></span></div>`).join('');
+  if (!listaGastos.length) { cont.innerHTML = '<span class="admin-item-vacio">Sin gastos.</span>'; return; }
+  cont.innerHTML = listaGastos.map(g => `<div class="admin-item-fila"><span>📌 ${g.concepto}</span><span><b>-${fmt(g.monto)}</b> <i class="fa-solid fa-circle-xmark admin-item-icono-accion" onclick="elimG(${g.id})"></i></span></div>`).join('');
 }
 // Antes esto sólo borraba el gasto en el navegador: como el servidor ignoraba el campo
 // "gastos" al guardar, el gasto "revivía" en el siguiente refresco automático (cada 4s).
@@ -820,28 +932,52 @@ function calcularReportesAdmin() {
   seg('rep-total-propinas', e => e.textContent = fmt(prop));
 }
 
-// ─── IMPRIMIR CORTE DE CAJA (refactorizado en función reutilizable) ───
+// ─── IMPRIMIR CORTE DE CAJA (mismo diseño térmico t58, refactorizado en función reutilizable) ───
 function imprimirCorte({ efec, tarj, trans, prop, gastos, gastosDetalle, periodo }) {
-  seg('overlay-ticket', e => e.style.display = 'none');
+  seg('ticket-venta-imprimible', e => e.style.display = 'none');
   const totalB = efec + tarj + trans;
   const bal = totalB - gastos;
   const listaGastosHtml = (gastosDetalle && gastosDetalle.length)
-    ? gastosDetalle.map(g => `<div class="ticket-subtotal-linea" style="font-size:11px;"><span>· ${g.concepto}</span><span>-${fmt(g.monto)}</span></div>`).join('')
+    ? gastosDetalle.map(g => `<div class="t58-linea" style="font-size:9px;"><span>· ${g.concepto}</span><span>-${fmt(g.monto)}</span></div>`).join('')
     : '';
   seg('ticket-corte-imprimible', e => {
     e.style.display = 'block';
-    e.innerHTML = `<div class="ticket-header"><h3>🐟 MARISCOS MATTY</h3><p><b>*** CORTE DE CAJA ${periodo ? '· ' + periodo : ''} ***</b></p><p>${new Date().toLocaleString('es-MX')}</p></div>
-      <div class="ticket-calculos" style="background:transparent;padding:0;">
-      <div class="ticket-subtotal-linea"><span>💵 Efectivo:</span><span>${fmt(efec)}</span></div>
-      <div class="ticket-subtotal-linea"><span>💳 Tarjeta:</span><span>${fmt(tarj)}</span></div>
-      <div class="ticket-subtotal-linea"><span>📱 Transf:</span><span>${fmt(trans)}</span></div>
-      <hr style="border:1px dashed #000;margin:6px 0;"><div class="ticket-subtotal-linea"><span>💰 Total:</span><span>${fmt(totalB)}</span></div>
-      <div class="ticket-subtotal-linea" style="color:var(--success);"><span>❤️ Propinas:</span><span>${fmt(prop)}</span></div>
-      <hr style="border:1px dashed #000;margin:6px 0;"><div class="ticket-subtotal-linea" style="color:var(--danger);"><span>📉 Gastos:</span><span>-${fmt(gastos)}</span></div>
-      ${listaGastosHtml}
-      <div class="ticket-total" style="border-top:2px solid #000;padding-top:6px;margin-top:6px;"><span>🧾 BALANCE</span><span>${fmt(bal)}</span></div></div>`;
+    e.innerHTML = `
+      <div class="t58-header">
+        <div class="t58-logo">🐟 MARISCOS MATTY</div>
+        <div class="t58-corte-titulo">*** Corte de Caja ***</div>
+        ${periodo ? `<div class="t58-meta">Periodo: ${periodo}</div>` : ''}
+        <div class="t58-meta">${new Date().toLocaleString('es-MX')}</div>
+      </div>
+      <div class="t58-divisor"></div>
+      <div class="t58-totales">
+        <div class="t58-linea"><span>💵 Efectivo</span><span>${fmt(efec)}</span></div>
+        <div class="t58-linea"><span>💳 Tarjeta</span><span>${fmt(tarj)}</span></div>
+        <div class="t58-linea"><span>📱 Transf.</span><span>${fmt(trans)}</span></div>
+        <div class="t58-linea t58-total" style="font-size:12px;"><span>Total</span><span>${fmt(totalB)}</span></div>
+      </div>
+      <div class="t58-divisor"></div>
+      <div class="t58-totales">
+        <div class="t58-linea"><span>❤️ Propinas</span><span>${fmt(prop)}</span></div>
+      </div>
+      <div class="t58-divisor"></div>
+      <div class="t58-totales">
+        <div class="t58-linea"><span>📉 Gastos</span><span>-${fmt(gastos)}</span></div>
+        ${listaGastosHtml}
+      </div>
+      <div class="t58-divisor"></div>
+      <div class="t58-totales">
+        <div class="t58-linea t58-total"><span>🧾 Balance</span><span>${fmt(bal)}</span></div>
+      </div>
+      <div class="t58-footer">
+        <div class="t58-divisor"></div>
+        <p>Corte generado por sistema</p>
+      </div>`;
   });
-  setTimeout(() => { window.print(); }, 200);
+  setTimeout(() => {
+    window.print();
+    seg('ticket-corte-imprimible', e => { e.style.display = 'none'; e.innerHTML = ''; });
+  }, 200);
 }
 
 seg('btn-borrar-ventas', el => el.onclick = async () => {
@@ -889,7 +1025,7 @@ function iniciarSistema() {
   cargarTodo();
   actualizarReloj();
   setInterval(actualizarReloj, 30000);
-  setInterval(cargarTodo, 4000);
+  intervaloAuto = setInterval(cargarTodo, 4000);
   const badge = document.createElement('span');
   badge.className = 'user-badge';
   badge.innerHTML = `👤 ${CURRENT_USER.nombre||'Sin sesión'}${CURRENT_USER.rol ? ` <span class="rol-badge rol-${CURRENT_USER.rol.toLowerCase()}">${CURRENT_USER.rol}</span>` : ''}`;
